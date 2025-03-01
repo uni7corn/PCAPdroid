@@ -11,9 +11,9 @@
     <string name="no_intent_handler_found">Bu eylemi gerçekleştirecek uygulama bulunamadı</string>
     <string name="network_interface">Arayüz</string>
     <string name="can_use_purchased_feature">Artık satın alınan özelliği kullanabilirsiniz</string>
-    <string name="disconnect_vpn_confirm">Etkin VPN uygulamasının bağlantısını kesip devam edilsin mi\?</string>
+    <string name="disconnect_vpn_confirm">Devam edildiğinde etkin VPN bağlantısı kesilecektir</string>
     <string name="http_server">HTTP sunucusu</string>
-    <string name="system_default">Sistem</string>
+    <string name="system_default">Sistem öntanımlı değeri</string>
     <string name="ip_address_val">IP adresi: %1$s</string>
     <string name="start_button">Başla</string>
     <string name="protocol">Protokol</string>
@@ -27,7 +27,6 @@
     <string name="rcvd_and_sent">%1$s alındı — %2$s gönderildi</string>
     <string name="query">Sorgu</string>
     <string name="host">Ana makine</string>
-    <string name="app_filter">Hedef uygulama</string>
     <string name="ready">Hazır</string>
     <string name="connections_view">Bağlantılar</string>
     <string name="no_connections">Bağlantı yok</string>
@@ -77,9 +76,6 @@
     <string name="permissions">İzinler</string>
     <string name="root_app_info">En yüksek ayrıcalıklarla çalışan sistem arka plan programları</string>
     <string name="packets_dropped">Düşürülen paketler</string>
-    <string name="pcapdroid_trailer">PCAPdroid izlemesi</string>
-    <string name="pcapdroid_trailer_summary">Dökülen paketlere, ek üst veriler (uygulama adı gibi) içeren bir izleme eklenecektir</string>
-    <string name="trailer_how_to">İzleme verileri Wireshark\'ta nasıl görüntülenir</string>
     <string name="ctrl_consent">Bir uygulama, aygıtınızın trafiğini yakalamak istiyor.
 \nEmin değilseniz reddedin</string>
     <string name="deny">Reddet</string>
@@ -90,7 +86,6 @@
     <string name="capture_interface">Yakalama arayüzü</string>
     <string name="internet">İnternet</string>
     <string name="edit_filter">Filtreyi düzenle</string>
-    <string name="malicious_connection_app">Kötü amaçlı bağlantı algılandı (%1$s)</string>
     <string name="security">Güvenlik</string>
     <string name="malware_detection">Kötü amaçlı yazılım algılama</string>
     <string name="reset">Sıfırla</string>
@@ -151,7 +146,7 @@
     <string name="packets">Paketler</string>
     <string name="receiver_ip_address">Toplayıcı IP adresi</string>
     <string name="yes">Evet</string>
-    <string name="vpn_setup_failed">VPN kurulamadı</string>
+    <string name="vpn_setup_failed">VPN kurulamadı. Her zaman açık VPN\'in devre dışı bırakıldığından emin olun</string>
     <string name="app_not_found">%1$s uygulaması bulunamadı</string>
     <string name="source">Kaynak</string>
     <string name="receiver_port">Toplayıcı bağlantı noktası</string>
@@ -167,7 +162,6 @@
     <string name="conn_status_unreachable">Ulaşılamıyor</string>
     <string name="file_saved_with_name">Dosya \"%1$s\" olarak kaydedildi</string>
     <string name="enable_socks5_proxy_summary">Tüm TCP bağlantılarını bir SOCKS5 vekiline yönlendir</string>
-    <string name="proxy_ip_address">Vekil IP adresi</string>
     <string name="protocol_val">Protokol: %1$s</string>
     <string name="android_app_info">Android sistemi</string>
     <string name="capture_prefs">Yakala</string>
@@ -177,7 +171,7 @@
     <string name="edit_list">Listeyi düzenle</string>
     <string name="status_uptodate">Güncel</string>
     <string name="private_dns_hinders_detection">Gizli DNS algılamayı engelliyor</string>
-    <string name="decryption_no_filter_warn">İnternet bağlantınızı kaybetmemek için TLS\'nin şifresini çözerken bir hedef uygulama seçin veya şifre çözme beyaz listesini kullanın</string>
+    <string name="decryption_no_filter_warn">İnternet bağlantınızı kaybetmemek için TLS\'nin şifresini çözerken bir hedef uygulama seçin</string>
     <string name="paid_features">Ücretli özellikler</string>
     <string name="interface_filter">Arayüz: %1$s</string>
     <string name="purchased">Satın alındı</string>
@@ -193,13 +187,10 @@
     <string name="get_app">Edin:</string>
     <string name="error">Hata</string>
     <string name="no_activity_file_selection">Dosya seçimini yapacak uygulama bulunamadı</string>
-    <string name="theme_dark">Koyu</string>
-    <string name="app_theme">Tema</string>
     <string name="proxy_port">Vekil bağlantı noktası</string>
     <string name="root_capture">Root olarak yakala</string>
     <string name="host_val">Ana makine: %1$s</string>
     <string name="app_details">Uygulama ayrıntıları</string>
-    <string name="theme_light">Açık</string>
     <string name="netd_app_info">DNS çözümlemelerini gerçekleştiren sistem arka plan programı</string>
     <string name="loading">Yükleniyor…</string>
     <string name="capturing_from">\"%1$s\" paketlerini yakala</string>
@@ -216,19 +207,17 @@
     <string name="socks5_info">SOCKS5 vekili: %1$s:%2$d</string>
     <string name="unblock">Engeli kaldır…</string>
     <string name="tls_decryption">TLS şifre çözme</string>
-    <string name="tls_decryption_starting">TLS şifre çözme başlıyor…</string>
     <string name="mitm_setup_wizard">Ortadaki adam kurulum sihirbazı</string>
     <string name="install_action">Kur</string>
     <string name="export_ca_certificate">PCAPdroid CA sertifikasını dışa aktarın, ardından Android \"Şifreleme ve Kimlik Bilgileri\" ayarlarını açın ve \"CA sertifikası\" olarak kurmayı seçin</string>
     <string name="checking_the_certificate">Sertifika denetleniyor…</string>
     <string name="cert_exported_now_installed">Sertifika dışa aktarıldı, şimdi Android ayarlarından onu kurun</string>
     <string name="cert_installed_correctly">CA sertifikası kuruldu</string>
-    <string name="mitm_addon_bad_version">Hatalı PCAPdroid ortadaki adam eklentisi sürümü. Kaldırın ve tekrar deneyin</string>
-    <string name="mitm_addon_new_version">PCAPdroid ortadaki adam eklentisi yükseltilmelidir</string>
-    <string name="upgrade_action">Yükselt</string>
+    <string name="mitm_addon_bad_version">Hatalı PCAPdroid ortadaki adam eklentisi sürümü. Lütfen %1$s sürümünü yükleyin ve tekrar deneyin</string>
+    <string name="mitm_addon_new_version">PCAPdroid ortadaki adam eklentisi güncellenmelidir</string>
     <string name="request">İstek</string>
     <string name="overview">Genel bakış</string>
-    <string name="payload_truncated">Yükün bir kısmı gösteriliyor. Tamamını göstermek için \"%1$s\" etkinleştirin</string>
+    <string name="payload_truncated">Yükün bir kısmı gösteriliyor. Tam olarak göstermek için yakalamayı durdurun ve PCAPdroid ayarlarından \"%1$s\" seçeneğini etkinleştirin</string>
     <string name="http">HTTP</string>
     <string name="payload">Yük</string>
     <string name="tx_direction">Gönder (TX)</string>
@@ -259,13 +248,10 @@
     <string name="phone_app">Telefon</string>
     <string name="socks5_proxy">SOCKS5</string>
     <string name="phone_app_info">Telefon hizmetleri</string>
-    <string name="configure_action">Yapılandır</string>
     <string name="install_ca_certificate">\"VPN ve uygulamalar\" seçeneğini seçerek PCAPdroid CA sertifikasını kurun. Android, kilit ekranınızı veya parolanızı soracak</string>
     <string name="tls_decryption_summary">Ortadaki adam gerçekleştirerek SSL/TLS trafiğinin şifresini çöz. Bu artık bazı uygulamalarla çalışabilir, kullanım kılavuzuna bakın</string>
-    <string name="tls_decryption_running">TLS şifre çözme çalışıyor</string>
     <string name="traffic_inspection">Trafik denetimi</string>
     <string name="export_action">Dışa aktar</string>
-    <string name="grant_mitm_permission">PCAPdroid\'e ortadaki adam eklentisini denetleme izni verin</string>
     <string name="mitm_start_failed">Ortadaki adam hizmeti başlatılamadı. Ortadaki adam eklentisini elle açmaya çalışın ve yeniden deneyin</string>
     <string name="not_encrypted">Şifrelenmedi</string>
     <string name="cert_reinstall_required">CA sertifikası kurulmadı, ortadaki adam kurulum sihirbazını çalıştırın</string>
@@ -299,7 +285,6 @@
     <string name="firewall_is_enabled">Güvenlik duvarı etkin</string>
     <string name="firewall_summary">Uygulamalara internet erişimini engelleyin, belirli etki alanları ve IP adresleri için kurallar yapılandırın. Yalnızca root olmayan yakalama ile çalışır</string>
     <string name="block_quick">QUIC\'i engelle</string>
-    <string name="block_quick_summary">Muhtemelen şifresi çözülebilir TLS\'ye geri dönmek için QUIC bağlantılarını engelleyin. Bazı uygulamalar çalışmayı durdurabilir</string>
     <string name="block_private_dns_summary">DNS trafiğini incelemek için özel DNS\'yi algılayın ve muhtemelen engelleyin. Bunu devre dışı bırakmak trafik incelemesini engelleyebilir</string>
     <string name="mitm_setup_wizard_done">PCAPdroid artık TLS trafiğinin şifresini çözmeye hazır
 \n
@@ -310,7 +295,9 @@
     <string name="privacy_first">Önce gizlilik</string>
     <string name="vpn_setup_msg">PCAPdroid, ağ trafiğini root olmadan yakalamak için bir VPN gibi davranır.
 \n
-\nYakalamayı başlatmak için, bir sonraki ekranda VPN isteğini kabul etmeniz gerekir</string>
+\nYakalamayı başlatmak için, bir sonraki ekranda VPN isteğini kabul etmeniz gerekir.
+\n
+\n<b>NOT:</b> Devam etmek için, Android ayarlarından yapılandırılmış her zaman açık VPN\'lerin tümünü devre dışı bırakın</string>
     <string name="app_intro_firewall_msg">Tümleşik <a href="%1$s">güvenlik duvarı</a> ile tek tek uygulamalara ve etki alanlarına internet erişimini kolayca engelleyebilirsiniz
 \n
 \nBunu yerleşik trafik görünürlüğü ile birleştirerek gizliliğinizi korumak için en iyi aracı elde edin</string>
@@ -407,9 +394,7 @@
     <string name="app_log">Günlük kaydı</string>
     <string name="no_data">Veri yok</string>
     <string name="malware_whitelist_action">Beyaz liste (kötü amaçlı yazılım)…</string>
-    <string name="decryption_whitelist_action">Beyaz liste (şifre çözme)…</string>
     <string name="mitm_addon">ortadaki adam eklentisi</string>
-    <string name="whitelisted">Beyaz listeye alındı</string>
     <string name="mitmproxy_opts">Ek mitmproxy seçenekleri</string>
     <string name="mitmproxy_opts_description">mitmproxy için ek seçenekler sağlayın</string>
     <string name="mitm_addon_error">Ortadaki adam eklentisi başlatılırken hata oluştu. Ayrıntılar için günlüğe bakın</string>
@@ -431,8 +416,6 @@
     <string name="ipv4_dns_server">IPv4 DNS sunucusu</string>
     <string name="ipv6_dns_server">IPv6 DNS sunucusu</string>
     <string name="use_system_dns_summary">Mümkünse sistem DNS sunucularını kullanın</string>
-    <string name="decryption_whitelist_rules">Şifre çözme beyaz listesi kuralları</string>
-    <string name="decryption_whitelist">Şifre çözme beyaz listesi</string>
     <string name="external_storage_perm_required">Harici depolama izni gerekli</string>
     <string name="many_rules_warning">Çok sayıda kuralı içe aktarmaya çalışıyorsunuz, bu da bazı etkileşimler sırasında uygulamanın yanıt vermemesine neden olabilir. Gerçekten devam etmek istiyor musunuz\?</string>
     <string name="pcapng_format">Pcapng biçimi</string>
@@ -442,7 +425,6 @@
     <string name="use_system_dns">Sistem DNS\'sini kullan</string>
     <string name="port_mapping_summary">Bağlantıları farklı bir ana makineye veya bağlantı noktasına yönlendirmek için bağlantı noktası eşleme kurallarını yapılandırın</string>
     <string name="redirect_to">Şuraya yönlendir:</string>
-    <string name="decryption_whitelist_help">Belirli bağlantıları TLS şifre çözme işleminden hariç tutmak için kurallar listesi. Sertifika sabitleme kullanan uygulamaları/SDK\'ları bozmaktan kaçınmak için faydalıdır. Ana makine eşleştirme yalnızca önceden bir DNS yanıtı görülürse çalışır</string>
     <string name="pcapng_format_summary">Paketleri TLS şifre çözme parolalarının gömülmesine olanak tanıyan pcapng biçiminde dök</string>
     <string name="sort_by">Sıralama ölçütü</string>
     <string name="total_bytes">Toplam bayt</string>
@@ -465,4 +447,57 @@
     <string name="license_limit_reached">Bu kilit açma belirteci için lisans sınırına ulaştınız. Daha fazla lisans oluşturmak için yeni bir belirteç satın alın</string>
     <string name="qr_license_confirm">Aşağıdaki kilit açma belirtecini kullanarak \"%1$s\" aygıtı için bir lisans oluşturmak istiyor musunuz\?</string>
     <string name="invalid_license">Geçersiz lisans</string>
+    <string name="decryption_rules">Şifre çözme kuralları</string>
+    <string name="injected">Enjekte edildi</string>
+    <string name="mitm_addon_running">Ortadaki adam eklentisi çalışıyor</string>
+    <string name="mitm_addon_starting">Ortadaki adam eklentisi başlatılıyor…</string>
+    <string name="dont_decrypt_action">Şifresini çözme…</string>
+    <string name="decryption_rules_help">Bu kurallar hangi bağlantıların şifresinin çözüleceğini belirtir. Ana makine tabanlı kurallar yalnızca önceden bir DNS yanıtı görülürse çalışır</string>
+    <string name="decrypt_action">Şifresini çöz…</string>
+    <string name="status_encrypted">Şifreli</string>
+    <string name="host_resolution_failed">%1$s adresi çözümlenemedi</string>
+    <string name="pcap_file_load_aborted">PCAP dosyası yükleme işlemi iptal edildi</string>
+    <string name="tls_decryption_no_rules_notice">TLS şifre çözme yalnızca yapılandırılan kurallarla eşleşen bağlantılara uygulanır. Şimdi şifre çözme kuralları oluşturmak istiyor musunuz\?</string>
+    <string name="pcap_load_success">PCAP dosyası yüklendi</string>
+    <string name="unsupported_pcap_datalink">PCAP dosyası desteklenmeyen bir veri bağlantısına sahip</string>
+    <string name="pcap_file_not_exists">Belirtilen PCAP dosyası yok</string>
+    <string name="root_capture_start_failed">Yakalama başlatma hatası. Aygıtın Magisk ile root yapıldığından emin olun</string>
+    <string name="decryption_info_no_rule">Bu bağlantının şifresi çözülmeyecek. Şifresini çözmek için bir şifre çözme kuralı oluşturun</string>
+    <string name="pcap_read_error">PCAP okuma hatası</string>
+    <string name="active_vpn_detected">Etkin VPN algılandı</string>
+    <string name="pcap_load_in_progress">PCAP dosyası yükleniyor, lütfen bekleyin</string>
+    <string name="pcapdroid_trailer_notice">\"%1$s\" yerine gerçek uygulamaları göstermek için, PCAP dosyasını dışa aktarmadan önce \"%2$s\" seçeneğini etkinleştirdiğinizden emin olun</string>
+    <string name="copy_error">Dosya yazılamadı</string>
+    <string name="open_pcap_file">PCAP dosyasını aç…</string>
+    <string name="root_capture_pcapd_start_failure">Yakalama başlatma hatası. PCAPdroid\'e root erişimi verdiğinizden emin olun</string>
+    <string name="invalid_pcap_file">Geçersiz PCAP dosyası</string>
+    <string name="proxy_host">Vekil sunucu</string>
+    <string name="capture_interface_open_error">Yakalama arayüzü açılamadı</string>
+    <string name="dnscrypt_how_to">PCAPdroid ile DoH / DNSCrypt nasıl kullanılır</string>
+    <string name="never">Hiçbir zaman</string>
+    <string name="always">Her zaman</string>
+    <string name="for_connections_to_decrypt">Yalnızca şifresi çözülecek bağlantılar için</string>
+    <string name="whats_new">Yenilikler</string>
+    <string name="export_ellipsis">Dışa aktar…</string>
+    <string name="mitm_doze_notice">Pil iyileştirmesi ortadaki adam eklentisinin çalışmasını engelleyebilir</string>
+    <string name="redirected">yönlendirildi</string>
+    <string name="connection_redirected_port_map">Bu bağlantı bir bağlantı noktası eşleme kuralı nedeniyle yönlendirildi</string>
+    <string name="both">Her ikisi de</string>
+    <string name="decrypt_quic_notice">QUIC şifresinin çözülmesi şu anda desteklenmiyor. Geçici bir çözüm olarak, yakalamayı durdurun ve PCAPdroid ayarlarında QUIC engelleme seçeneğini seçin</string>
+    <string name="target_apps">Hedef uygulamalar</string>
+    <string name="target_apps_help">Yakalanacak uygulamaları seçin</string>
+    <string name="headers">Başlıklar</string>
+    <string name="body">Gövde</string>
+    <string name="raw_bytes">Ham baytlar</string>
+    <string name="restart_on_disconnection">Bağlantı kesildiğinde yeniden başlat</string>
+    <string name="vpn_reconnection">VPN yeniden bağlantısı</string>
+    <string name="vpn_reconnection_aborted">VPN yeniden bağlantısı iptal edildi</string>
+    <string name="waiting_for_vpn_disconnect">Etkin VPN bağlantısının kesilmesi bekleniyor…</string>
+    <string name="restart_on_disconnection_summary">Diğer VPN uygulamaları tarafından durdurulduktan sonra yakalamayı otomatik olarak yeniden başlat</string>
+    <string name="ipv6_bytes_sent">Gönderilen IPv6 bayt</string>
+    <string name="ipv6_bytes_percentage">IPv6 bayt yüzdesi</string>
+    <string name="ipv6_bytes_rcvd">Alınan IPv6 bayt</string>
+    <string name="update_available">Güncelleme var</string>
+    <string name="mitm_addon_update_available">Yeni bir ortadaki adam eklentisi güncellemesi var. En son hata düzeltmelerini almak için güncelleyin</string>
+    <string name="update_action">Güncelle</string>
 </resources>

@@ -14,19 +14,20 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-24 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.adapters;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.TextView;
 
+import androidx.annotation.CheckResult;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
@@ -40,11 +41,14 @@ import com.emanuelef.remote_capture.model.ConnectionDescriptor;
 import com.emanuelef.remote_capture.model.PayloadChunk;
 import com.emanuelef.remote_capture.model.PayloadChunk.ChunkType;
 import com.emanuelef.remote_capture.model.Prefs;
+import com.google.android.material.button.MaterialButton;
 
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /* An adapter to show PayloadChunk items.
@@ -64,7 +68,14 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
     private final ArrayList<AdapterChunk> mChunks = new ArrayList<>();
     private final HTTPReassembly mHttpReq;
     private final HTTPReassembly mHttpRes;
+    private final boolean mSupportsFileDialog;
     private boolean mShowAsPrintable;
+    private ExportPayloadHandler mExportHandler;
+
+    public interface ExportPayloadHandler {
+        void exportPayload(String payload);
+        void exportPayload(byte[] payload, String contentType, String fname);
+    }
 
     public PayloadAdapter(Context context, ConnectionDescriptor conn, ChunkType mode, boolean showAsPrintable) {
         mLayoutInflater = (LayoutInflater)context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
@@ -72,6 +83,7 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
         mContext = context;
         mMode = mode;
         mShowAsPrintable = showAsPrintable;
+        mSupportsFileDialog = Utils.supportsFileDialog(context);
 
         // Note: in minimal mode, only the first chunk is captured, so don't reassemble them
         boolean reassemble = (CaptureService.getCurPayloadMode() == Prefs.PayloadMode.FULL);
@@ -81,6 +93,10 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
         mHttpRes = new HTTPReassembly(reassemble, this);
 
         handleChunksAdded(mConn.getNumPayloadChunks());
+    }
+
+    public void setExportPayloadHandler(ExportPayloadHandler handler) {
+        mExportHandler = handler;
     }
 
     private class AdapterChunk {
@@ -111,18 +127,24 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
             return mChunk;
         }
 
-        private void makeText() {
-            int dump_len = mIsExpanded ? mChunk.payload.length : Math.min(mChunk.payload.length, COLLAPSE_CHUNK_SIZE);
+        @CheckResult
+        private String makeText(boolean as_printable, boolean expanded) {
+            int dump_len = expanded ? mChunk.payload.length : Math.min(mChunk.payload.length, COLLAPSE_CHUNK_SIZE);
 
-            if(!mShowAsPrintable)
-                mTheText = Utils.hexdump(mChunk.payload, 0, dump_len);
+            if(!as_printable)
+                return Utils.hexdump(mChunk.payload, 0, dump_len);
             else
-                mTheText = new String(mChunk.payload, 0, dump_len, StandardCharsets.UTF_8);
+                return new String(mChunk.payload, 0, dump_len, StandardCharsets.UTF_8);
+        }
+
+        @CheckResult
+        private String makeText() {
+            return makeText(mShowAsPrintable, mIsExpanded);
         }
 
         void expand() {
             mIsExpanded = true;
-            makeText();
+            mTheText = makeText();
 
             // round up div
             mNumPages = (mTheText.length() + VISUAL_PAGE_SIZE - 1) / VISUAL_PAGE_SIZE;
@@ -138,7 +160,7 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
 
         String getText(int start, int end) {
             if(mTheText == null)
-                makeText();
+                mTheText = makeText();
 
             if((start == 0) && (end >= mTheText.length() - 1)) {
                 return mTheText;
@@ -147,11 +169,15 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
             return mTheText.substring(start, end);
         }
 
+        String getExpandedText(boolean as_printable) {
+            return makeText(as_printable, true);
+        }
+
         Page getPage(int pageIdx) {
             assert(pageIdx < mNumPages);
 
             if(mTheText == null)
-                makeText();
+                mTheText = makeText();
 
             if(!mIsExpanded)
                 return new Page(this, 0, mTheText.length() - 1, true);
@@ -189,8 +215,9 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
         View dumpBox;
         TextView header;
         TextView dump;
-        TextView contentType;
-        ImageView expandButton;
+        MaterialButton expandButton;
+        MaterialButton copybutton;
+        MaterialButton exportbutton;
 
         public PayloadViewHolder(View view) {
             super(view);
@@ -200,7 +227,8 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
             dump = view.findViewById(R.id.dump);
             dumpBox = view.findViewById(R.id.dump_box);
             expandButton = view.findViewById(R.id.expand_button);
-            contentType = view.findViewById(R.id.content_type);
+            copybutton = view.findViewById(R.id.copy_button);
+            exportbutton = view.findViewById(R.id.export_button);
         }
     }
 
@@ -227,7 +255,140 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
             }
         });
 
+        holder.copybutton.setOnClickListener(v -> handleCopyExportButtons(holder, false));
+        holder.exportbutton.setOnClickListener(v -> handleCopyExportButtons(holder, true));
+        holder.exportbutton.setVisibility(mSupportsFileDialog ? View.VISIBLE : View.GONE);
+
         return holder;
+    }
+
+    private void handleCopyExportButtons(PayloadViewHolder holder, boolean is_export) {
+        if(is_export && (mExportHandler == null))
+            return;
+
+        int payload_pos = holder.getAbsoluteAdapterPosition();
+        int title = is_export ? R.string.export_ellipsis : R.string.copy_action;
+        int positive_action = is_export ? R.string.export_action : R.string.copy_to_clipboard;
+
+        AdapterChunk chunk = getItem(payload_pos).adaptChunk;
+        if (chunk == null)
+            return;
+
+        if(mMode == ChunkType.HTTP) {
+            String payload = chunk.getExpandedText(true);
+            int crlf_pos = payload.indexOf("\r\n\r\n");
+            String content_type = ((chunk.mChunk.contentType != null) && (!chunk.mChunk.contentType.isEmpty())) ?
+                    chunk.mChunk.contentType : "text/plain";
+
+            Log.d(TAG, "Export body content type: " + content_type);
+
+            String fname = "";
+            if (chunk.mChunk.is_sent && (chunk.mChunk.path != null))
+                fname = chunk.mChunk.path;
+            else if (payload_pos > 0) {
+                // Try to match the HTTP request, to determine the file name
+                AdapterChunk req_chunk = getItem(payload_pos - 1).adaptChunk;
+                if (req_chunk.mChunk.is_sent && (req_chunk.mChunk.path != null))
+                    fname = req_chunk.mChunk.path;
+            }
+
+            if (!fname.isEmpty()) {
+                int last_slash = fname.lastIndexOf('/');
+                if (last_slash >= 0)
+                    fname = fname.substring(last_slash + 1);
+            }
+
+            if (fname.contains("."))
+                Log.d(TAG, "File name: " + fname);
+            else
+                fname = "";
+
+            String filename = fname;
+
+            boolean has_body = (crlf_pos > 0) && (crlf_pos < (payload.length() - 4));
+            if (!has_body) {
+                // only HTTP headers
+                if (is_export) {
+                    if (mExportHandler != null)
+                        mExportHandler.exportPayload(payload);
+                } else
+                    Utils.copyToClipboard(mContext, payload);
+                return;
+            }
+
+            String[] choices = {
+                    mContext.getString(R.string.headers),
+                    mContext.getString(R.string.body),
+                    mContext.getString(R.string.both),
+            };
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(mContext);
+            builder.setTitle(title);
+            builder.setSingleChoiceItems(choices, 1, (dialogInterface, i) -> {});
+            builder.setNeutralButton(R.string.cancel_action, (dialogInterface, i) -> {});
+            builder.setPositiveButton(positive_action, (dialogInterface, i) -> {
+                int choice = ((AlertDialog)dialogInterface).getListView().getCheckedItemPosition();
+                String to_copy = payload;
+
+                if (choice != 2) {
+                    if (choice == 0 /* Headers */)
+                        to_copy = to_copy.substring(0, crlf_pos);
+                    else /* body */
+                        to_copy = to_copy.substring(crlf_pos + 4);
+                }
+
+                if (is_export) {
+                    if (mExportHandler != null) {
+                        boolean only_body = (choice == 1);
+
+                        if (only_body) {
+                            // export the raw body bytes
+                            byte[] payload_bytes = chunk.mChunk.payload;
+
+                            if (crlf_pos < (payload_bytes.length - 4))
+                                payload_bytes = Arrays.copyOfRange(payload_bytes, crlf_pos + 4, payload_bytes.length);
+
+                            mExportHandler.exportPayload(payload_bytes, content_type, filename);
+                        } else
+                            mExportHandler.exportPayload(to_copy);
+                    }
+                } else
+                    Utils.copyToClipboard(mContext, to_copy);
+            });
+            builder.create().show();
+        } else {
+            List<String> choices = new ArrayList<>(Arrays.asList(
+                    mContext.getString(R.string.printable_text),
+                    mContext.getString(R.string.hexdump)
+            ));
+            if (is_export)
+                choices.add(mContext.getString(R.string.raw_bytes));
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(mContext);
+            builder.setTitle(title);
+            builder.setSingleChoiceItems(choices.toArray(new String[]{}), mShowAsPrintable ? 0 : 1, (dialogInterface, i) -> {});
+
+            builder.setNeutralButton(R.string.cancel_action, (dialogInterface, i) -> {});
+            builder.setPositiveButton(positive_action, (dialogInterface, i) -> {
+                int choice = ((AlertDialog)dialogInterface).getListView().getCheckedItemPosition();
+
+                if (choice == 2 /* raw bytes */) {
+                    assert (is_export);
+
+                    if (mExportHandler != null)
+                        mExportHandler.exportPayload(chunk.mChunk.payload, "application/octet-stream", "");
+                } else {
+                    String payload = getItem(payload_pos).adaptChunk.getExpandedText(choice == 0);
+
+                    if (is_export) {
+                        if (mExportHandler != null)
+                            mExportHandler.exportPayload(payload);
+                    } else
+                        Utils.copyToClipboard(mContext, payload);
+                }
+            });
+            builder.create().show();
+        }
     }
 
     private String getHeaderTag(PayloadChunk chunk) {
@@ -251,8 +412,6 @@ public class PayloadAdapter extends RecyclerView.Adapter<PayloadAdapter.PayloadV
                     getHeaderTag(chunk),
                     (new SimpleDateFormat("HH:mm:ss.SSS", locale)).format(new Date(chunk.timestamp)),
                     Utils.formatBytes(chunk.payload.length)));
-
-            holder.contentType.setText((chunk.contentType != null) ? chunk.contentType : "");
         } else
             holder.headerLine.setVisibility(View.GONE);
 

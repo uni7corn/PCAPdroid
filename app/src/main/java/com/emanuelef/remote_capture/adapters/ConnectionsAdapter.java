@@ -76,8 +76,10 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
         ImageView icon;
+        ImageView jsInjectorInd;
         ImageView blacklistedInd;
         ImageView blockedInd;
+        ImageView redirectedInd;
         ImageView decryptionInd;
         TextView statusInd;
         TextView remote;
@@ -99,8 +101,10 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
             decryptionInd = itemView.findViewById(R.id.decryption_status);
             appName = itemView.findViewById(R.id.app_name);
             lastSeen = itemView.findViewById(R.id.last_seen);
+            jsInjectorInd = itemView.findViewById(R.id.js_injector);
             blacklistedInd = itemView.findViewById(R.id.blacklisted);
             blockedInd = itemView.findViewById(R.id.blocked);
+            redirectedInd = itemView.findViewById(R.id.redirected);
             //countryFlag = itemView.findViewById(R.id.country_flag);
 
             Context context = itemView.getContext();
@@ -143,6 +147,10 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
             else if((conn.status == ConnectionDescriptor.CONN_STATUS_CLOSED)
                     || (conn.status == ConnectionDescriptor.CONN_STATUS_RESET))
                 color = R.color.statusClosed;
+            else if ((conn.status == ConnectionDescriptor.CONN_STATUS_ERROR)
+                    || ((conn.status == ConnectionDescriptor.CONN_STATUS_SOCKET_ERROR))
+                    || (conn.status == ConnectionDescriptor.CONN_STATUS_UNREACHABLE))
+                color = R.color.warning;
             else
                 color = R.color.statusError;
 
@@ -155,10 +163,12 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
                 countryFlag.setCountryCode(conn.country);
             }*/
 
+            jsInjectorInd.setVisibility(((conn.js_injected_scripts != null) && !conn.js_injected_scripts.isEmpty()) ? View.VISIBLE : View.GONE);
             blacklistedInd.setVisibility(conn.isBlacklisted() ? View.VISIBLE : View.GONE);
             blockedInd.setVisibility(conn.is_blocked ? View.VISIBLE : View.GONE);
+            redirectedInd.setVisibility((conn.isPortMappingApplied() && !conn.is_blocked) ? View.VISIBLE : View.GONE);
 
-            if(CaptureService.isDecryptingTLS()) {
+            if(CaptureService.isDecryptingTLS() || PCAPdroid.getInstance().isDecryptingPcap()) {
                 decryptionInd.setVisibility(View.VISIBLE);
                 Utils.setDecryptionIcon(decryptionInd, conn);
             } else
@@ -464,6 +474,7 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
                 builder.append(conn.dst_port);                              builder.append(",");
                 builder.append(conn.uid);                                   builder.append(",");
                 builder.append((app != null) ? app.getName() : "");         builder.append(",");
+                builder.append((app != null) ? app.getPackageName() : "");  builder.append(",");
                 builder.append(conn.l7proto);                               builder.append(",");
                 builder.append(conn.getStatusLabel(mContext));              builder.append(",");
                 builder.append((conn.info != null) ? conn.info : "");       builder.append(",");
@@ -471,8 +482,8 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
                 builder.append(conn.rcvd_bytes);                            builder.append(",");
                 builder.append(conn.sent_pkts);                             builder.append(",");
                 builder.append(conn.rcvd_pkts);                             builder.append(",");
-                builder.append(conn.first_seen);                            builder.append(",");
-                builder.append(conn.last_seen);
+                builder.append(Utils.formatMillisIso8601(mContext, conn.first_seen));                            builder.append(",");
+                builder.append(Utils.formatMillisIso8601(mContext, conn.last_seen));
 
                 if(malwareDetection) {
                     builder.append(",");

@@ -85,10 +85,10 @@ pcapdroid_t* pd_init_test(const char *ifname) {
   pcapdroid_t *pd = calloc(1, sizeof(pcapdroid_t));
   assert(pd != NULL);
 
-  pd->root_capture = true;
-  pd->root.capture_interface = (char*) ifname;
-  pd->root.as_root = false;   // don't run as root
-  pd->app_filter = -1;        // don't filter
+  pd->vpn_capture = false;
+  pd->pcap_file_capture = true;
+  pd->pcap.capture_interface = (char*) ifname;
+  pd->pcap.as_root = false;   // don't run as root
   pd->cb.get_libprog_path = getPcapdPath;
   pd->payload_mode = PAYLOAD_MODE_FULL;
 
@@ -216,13 +216,13 @@ u_char* next_pcap_record(pcap_rec_t *rec) {
 
 /* Dumps all the payload chunks into a linked list. The linked list is accessible via
  * (payload_chunk_t*)data->payload_chunks */
-bool dump_cb_payload_chunk(pcapdroid_t *pd, const pkt_context_t *pctx, int dump_size) {
+bool dump_cb_payload_chunk(pcapdroid_t *pd, const pkt_context_t *pctx, const char *dump_data, int dump_size) {
   payload_chunk_t *chunk = calloc(1, sizeof(payload_chunk_t));
   assert(chunk != NULL);
   chunk->payload = (u_char*)malloc(dump_size);
   assert(chunk->payload != NULL);
 
-  memcpy(chunk->payload, pctx->pkt->l7, dump_size);
+  memcpy(chunk->payload, dump_data, dump_size);
   chunk->size = dump_size;
   chunk->is_tx = pctx->is_tx;
 

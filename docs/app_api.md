@@ -31,7 +31,7 @@ adb shell am start -e action start -e pcap_dump_mode udp_exporter -e collector_i
 ```
 
 then your app can listen for UDP packets on port `5123` to handle the Firefox network packets.
-Another interesting option is to enable the [pcapdroid_trailer](https://emanuele-f.github.io/PCAPdroid/advanced_features#45-pcapdroid-trailer) to be able to get the app UID/name into your app.
+Another interesting option is to enable the [dump_extensions](https://emanuele-f.github.io/PCAPdroid/advanced_features#45-pcapdroid-extensions) to be able to get the app UID/name into your app.
 
 The Intent above can also be triggered programmatically from your app:
 
@@ -79,29 +79,30 @@ As shown above, the capture settings can be specified by using intent extras. Th
 | Parameter               | Type   | Ver | Mode | Value                                                              |
 |-------------------------|--------|-----|------|--------------------------------------------------------------------|
 | pcap_dump_mode          | string |     |      | none \| http_server \| udp_exporter \| pcap_file                   |
-| app_filter              | string |     |      | the package name of the app to capture                             |
+| app_filter              | string |     |      | package name of the app(s) to capture (73+: comma separated list)  |
 | collector_ip_address    | string |     |      | the IP address of the collector in udp_exporter mode               |
 | collector_port          | int    |     |      | the UDP port of the collector in udp_exporter mode                 |
 | http_server_port        | int    |     |      | the HTTP server port in http_server mode                           |
 | pcap_uri                | string |     |      | the URI for the PCAP dump in pcap_file mode (overrides pcap_name)  |
 | socks5_enabled          | bool   |     | vpn  | true to redirect the TCP connections to a SOCKS5 proxy             |
-| socks5_proxy_ip_address | string |     | vpn  | the IP address of the SOCKS5 proxy                                 |
-| socks5_proxy_port       | int    |     | vpn  | the TCP port of the SOCKS5 proxy                                   |
+| socks5_proxy_ip_address | string |     | vpn  | the SOCKS5 proxy IP address                                        |
+| socks5_proxy_port       | int    |     | vpn  | the SOCKS5 proxy port                                              |
 | root_capture            | bool   |     |      | true to capture packets in root mode, false to use the VPNService  |
-| pcapdroid_trailer       | bool   |     |      | true to enable the PCAPdroid trailer                               |
+| pcapdroid_trailer       | bool   |     |      | (deprecated) alias for dump_extensions                             |
 | capture_interface       | string |     | root | @inet \| any \| ifname - network interface to use in root mode     |
 | snaplen                 | int    |  43 |      | max size in bytes for each individual packet in the PCAP dump      |
 | max_pkts_per_flow       | int    |  43 |      | only dump the first max_pkts_per_flow packets per flow             |
 | max_dump_size           | int    |  43 |      | max size in bytes for the PCAP dump                                |
 | tls_decryption          | bool   |  49 | vpn  | true to enable the built-in TLS decryption                         |
-| block_quic              | bool   |  51 | vpn  | true to block QUIC traffic                                         |
 | auto_block_private_dns  | bool   |  51 | vpn  | true to detect and possibly block private DNS to inspect traffic   |
 | ip_mode                 | string |  56 | vpn  | which IP addresses to use for the VPN: ipv4 \| ipv6 \| both        |
 | mitmproxy_opts          | string |  62 |      | additional options to provide to mitmproxy in decryption mode      |
 | pcap_name               | string |  62 |      | write the PCAP to Download/PCAPdroid/*pcap_name* in pcap_file mode |
-| pcapng_format           | bool   |  62 |      | true to use the PCAPNG dump format (overrides pcapdroid_trailer)*  |
+| pcapng_format           | bool   |  62 |      | true to use the PCAPNG dump format*                                |
 | socks5_username         | string |  64 | vpn  | username for the optional SOCKS5 proxy authentication              |
 | socks5_password         | string |  64 | vpn  | password for the optional SOCKS5 proxy authentication              |
+| block_quic              | string |  73 | vpn  | never \| always \| to_decrypt (matching the decryption whitelist)  |
+| dump_extensions         | bool   |  79 |      | extend the packet dump format with additional metadata             |
 
 \*: paid feature
 
@@ -157,6 +158,8 @@ In the result of the `stop` and `get_status` actions and in the broadcast of `Ca
 | pkts_sent           | int    |  50 | packets sent                                                       |
 | pkts_rcvd           | int    |  50 | packets received                                                   |
 | pkts_dropped        | int    |  50 | in root mode, number of packets not analyzed and not dumped        |
+| ipv6_bytes_sent     | long   |  74 | IPv6 bytes sent (from the device to the Internet)                  |
+| ipv6_bytes_recv     | long   |  74 | IPv6 bytes received (from the Internet to the device)              |
 
 ## Dumping PCAP to file
 

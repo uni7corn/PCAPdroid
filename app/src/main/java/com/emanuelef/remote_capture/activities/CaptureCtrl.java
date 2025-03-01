@@ -98,7 +98,7 @@ public class CaptureCtrl extends AppCompatActivity {
         getWindow().addFlags(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         super.onCreate(savedInstanceState);
 
-        mCapHelper = new CaptureHelper(this);
+        mCapHelper = new CaptureHelper(this, false);
         mCapHelper.setListener(success -> {
             setResult(success ? RESULT_OK : RESULT_CANCELED, null);
             finish();
@@ -196,14 +196,21 @@ public class CaptureCtrl extends AppCompatActivity {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public void onBackPressed() {
         abort();
+        super.onBackPressed();
+    }
+
+    private void abort(boolean show_toast) {
+        if(show_toast)
+            Utils.showToast(this, R.string.ctrl_consent_denied);
+        setResult(RESULT_CANCELED, null);
+        finish();
     }
 
     private void abort() {
-        Utils.showToast(this, R.string.ctrl_consent_denied);
-        setResult(RESULT_CANCELED, null);
-        finish();
+        abort(true);
     }
 
     // Check if the capture is requesting to send traffic to a remote server.
@@ -220,7 +227,7 @@ public class CaptureCtrl extends AppCompatActivity {
 
         if(settings.socks5_enabled &&
                 !Utils.isLocalNetworkAddress(settings.socks5_proxy_address) &&
-                !Prefs.getSocks5ProxyAddress(prefs).equals(settings.socks5_proxy_address))
+                !Prefs.getSocks5ProxyHost(prefs).equals(settings.socks5_proxy_address))
             return settings.socks5_proxy_address;
 
         // ok
@@ -243,6 +250,8 @@ public class CaptureCtrl extends AppCompatActivity {
                 abort();
                 return;
             }
+
+            PCAPdroid.getInstance().setIsDecryptingPcap(false);
 
             if(!settings.pcap_uri.isEmpty()) {
                 persistableUriPermission.checkPermission(settings.pcap_uri, settings.pcapng_format, granted_uri -> {
@@ -313,6 +322,8 @@ public class CaptureCtrl extends AppCompatActivity {
     private static void putStats(Intent intent, CaptureStats stats) {
         intent.putExtra("bytes_sent", stats.bytes_sent);
         intent.putExtra("bytes_rcvd", stats.bytes_rcvd);
+        intent.putExtra("ipv6_bytes_sent", stats.ipv6_bytes_sent);
+        intent.putExtra("ipv6_bytes_rcvd", stats.ipv6_bytes_rcvd);
         intent.putExtra("bytes_dumped", stats.pcap_dump_size);
         intent.putExtra("pkts_sent", stats.pkts_sent);
         intent.putExtra("pkts_rcvd", stats.pkts_rcvd);
@@ -325,7 +336,7 @@ public class CaptureCtrl extends AppCompatActivity {
         String package_name = getCallingPackage();
         if((package_name == null) || !package_name.equals(BuildConfig.APPLICATION_ID + ".debug")) {
             Log.w(TAG, "getPeerInfo: package name mismatch");
-            abort();
+            abort(false);
             return;
         }
 

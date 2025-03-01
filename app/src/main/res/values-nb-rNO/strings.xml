@@ -25,7 +25,6 @@
     <string name="connections_view">Tilkoblinger</string>
     <string name="connection_details">Tilkoblingsdetaljer</string>
     <string name="rcvd_and_sent">%1$s mottatt — %2$s sendt</string>
-    <string name="app_filter">Målprogram</string>
     <string name="app">Program</string>
     <string name="protocol">Protokoll</string>
     <string name="source">Kilde</string>
@@ -63,7 +62,6 @@
     <string name="about_text">PCAPdroid er et fritt verktøy for nettverksovervåkning og lagring, som fungerer uten rot-tilgang</string>
     <string name="get_app">Hent det:</string>
     <string name="conn_status_unreachable">Kan ikke nåes</string>
-    <string name="theme_light">Lys</string>
     <string name="donate">Doner</string>
     <string name="search">Søk …</string>
     <string name="ip_address_val">IP-adresse: %1$s</string>
@@ -79,7 +77,6 @@
     <string name="version">Versjon</string>
     <string name="permissions">Tilganger</string>
     <string name="android_app_info">Android-systemet</string>
-    <string name="proxy_ip_address">IP-adresse for mellomtjener</string>
     <string name="proxy_port">Mellomtjenerport</string>
     <string name="app_val">Program: %1$s</string>
     <string name="target_sdk">Mål-SDK</string>
@@ -114,7 +111,6 @@
     <string name="bytes_rcvd">Byte mottatt</string>
     <string name="open_sockets">Åpne socket-er</string>
     <string name="app_language">Programspråk</string>
-    <string name="theme_dark">Mørk</string>
     <string name="search_apps">Søk i programmer</string>
     <string name="no_apps">Ingen programmer</string>
     <string name="deny">Nekt</string>
@@ -122,7 +118,6 @@
     <string name="other_prefs">Annet</string>
     <string name="lang_english">Engelsk</string>
     <string name="system_default">System</string>
-    <string name="app_theme">Drakt</string>
     <string name="socks5_proxy">Skru på SOCKS5-mellomtjener</string>
     <string name="blacklists">Svartelister</string>
     <string name="status_not_loaded">Ikke innlastet</string>
@@ -132,7 +127,6 @@
     <string name="app_not_found">Fant ikke programmet «%1$s»</string>
     <string name="no_activity_file_selection">Fant ikke noe program til å håndtere valg av filer</string>
     <string name="file_saved_with_name">Filen «%1$s» ble lagret</string>
-    <string name="pcapdroid_trailer_summary">En trailer som inneholder ytterligere metadata (som programnavn) vil bli lagt til i registrerte pakker.</string>
     <string name="ctrl_consent_denied">PCAPdroid: Kontrollforespørsel ble avslått</string>
     <string name="all_interfaces">Alle grensesnitt</string>
     <string name="edit_filter">Rediger filter</string>
@@ -140,7 +134,6 @@
     <string name="hidden_connections_rules">Skjul tilkolbingsregler</string>
     <string name="list_is_empty">Listen er tom</string>
     <string name="ctrl_consent_allowed">PCAPdroid: Kontrollforespørsel ble innvilget</string>
-    <string name="malicious_connection_app">Ondsinnet tilkobling opdaget (%1$s)</string>
     <string name="security">Sikkerhet</string>
     <string name="show_only_malicious">Ondsinnede tilkoblinger</string>
     <string name="control_permissions">Kontrolltilganger</string>
@@ -181,10 +174,8 @@
     <string name="enable_socks5_proxy_summary">Videresend alle TCP-tilkoblinger til angitt SOCKS5-mellomtjener</string>
     <string name="unknown_app_info">«Ukjent» tilkjennegir tilkoblinger hvis program ikke kunne fastsettes.</string>
     <string name="root_capture">Fangst med rot-tilgang</string>
-    <string name="pcapdroid_trailer">PCAPdroid-trailer</string>
     <string name="ctrl_consent">Et program vil fane din enhetstrafikk.
 \nNekt det hvis du ikke er sikker</string>
-    <string name="trailer_how_to">Hvordan vise trailer-data i Wireshark</string>
     <string name="malware_whitelist_rules">Skadevare-hvitlisteregler</string>
     <string name="malware_detection_summary">Oppdag tilkoblinger til kjente ondsinnede verter via tredjeparts-svartelister</string>
     <string name="billing_connecting">Kobler til Google Play …Prøv igjen om en stund.</string>
@@ -267,9 +258,7 @@
     <string name="socks5_info">SOCKS5-mellomtjener: %1$s:%2$d</string>
     <string name="phone_app_info">Telefonitjenester</string>
     <string name="unblock">Avblokker …</string>
-    <string name="tls_decryption_starting">Starter TLS-dekryptering …</string>
     <string name="traffic_inspection">Trafikk-inspeksjon</string>
-    <string name="tls_decryption_running">Dekrypterer TLS …</string>
     <string name="mitm_start_failed">Kunne ikke starte MITM-tjenesten. Reinstaller MITM-tillegget og prøv igjen.</string>
     <string name="install_action">Installer</string>
     <string name="mitm_setup_wizard">Oppsettsveileder for MITM</string>
@@ -297,18 +286,15 @@
     <string name="rules_delete_confirm">Slett valgte regler\?</string>
     <string name="firewall_is_disabled">Brannmur av</string>
     <string name="action_unblock">Avblokker</string>
-    <string name="configure_action">Sett opp</string>
     <string name="export_action">Eksporter</string>
     <string name="tls_decryption">TLS-dekryptering</string>
     <string name="tls_decryption_summary">Dekrypter SSL/TLS-trafikk ved å utføre MITM. Dette kan fungere med noen programmer nå. Sjekk brukerveiledningen.</string>
-    <string name="grant_mitm_permission">Gi PCAPdroid tilgang til å kontrollere MITM-tillegget</string>
     <string name="export_ca_certificate">Eksporter sertifikatmyndighetssertifikatet tilhørende PCAPdroid, åpne så «Kryptering og identitetsdetaljer» i Android og veld å installere det som et «CA-sertifikat».</string>
     <string name="checking_the_certificate">Sjekker sertifikatet …</string>
     <string name="cert_exported_now_installed">Sertifikat eksporter. Installer det nå fra Android-innstillingene.</string>
     <string name="cert_installed_correctly">Sertifikatmyndighetssertifikatet er installert</string>
     <string name="cert_reinstall_required">Sertifikatmyndighetssertifikatet er ikke installert. Kjør MITM-oppsettsveilederen.</string>
-    <string name="mitm_addon_bad_version">Feilaktig versjon for MITM-tillegget i PCAPdroid. Avinstaller det og prøv igjen.</string>
-    <string name="upgrade_action">Oppgrader</string>
+    <string name="mitm_addon_bad_version">Feilaktig versjon for MITM-tillegget i PCAPdroid. Installer versjon %1$s og prøv igjen.</string>
     <string name="export_failed">Eksport mislyktes</string>
     <string name="not_encrypted">Ikke kryptert</string>
     <string name="request">Forespørsel</string>
@@ -343,7 +329,6 @@
     <string name="no_root_firewall">Brannmur uten rot-tilgang</string>
     <string name="block_quick">Blokker QUIC</string>
     <string name="block_private_dns">Blokker privat DNS</string>
-    <string name="block_quick_summary">Blokker QUIC-tilkoblinger for å potensielt falle tilbake til dekrypterbar TLS. Noen programmer kan slutte å fungere.</string>
     <string name="welcome_to_pcapdroid">Velkommen til PCAPdroid</string>
     <string name="app_intro_next_button">Neste</string>
     <string name="app_intro_skip_button">Hopp over</string>

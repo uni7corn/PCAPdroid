@@ -39,14 +39,14 @@
         <item>@string/ip_both</item>
     </string-array>
 
-    <string-array name="app_theme">
-        <item>system</item>
-        <item>light</item>
-        <item>dark</item>
+    <string-array name="block_quic">
+        <item>never</item>
+        <item>always</item>
+        <item>to_decrypt</item>
     </string-array>
-    <string-array name="app_theme_labels">
-        <item>@string/system_default</item>
-        <item>@string/theme_light</item>
-        <item>@string/theme_dark</item>
+    <string-array name="block_quic_labels">
+        <item>@string/never</item>
+        <item>@string/always</item>
+        <item>@string/for_connections_to_decrypt</item>
     </string-array>
 </resources>

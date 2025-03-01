@@ -53,6 +53,14 @@
             app:defaultValue="true" />
 
         <Preference
+            app:key="dnscrypt_link"
+            app:title="@string/dnscrypt_how_to"
+            app:iconSpaceReserved="false">
+            <intent android:action="android.intent.action.VIEW"
+                android:data="https://emanuele-f.github.io/PCAPdroid/advanced_features#42-doh-support" />
+        </Preference>
+
+        <Preference
             android:key="geolocation"
             app:title="@string/geolocation"
             app:summary="@string/geolocation_summary"
@@ -79,19 +87,14 @@
             app:iconSpaceReserved="false"
             app:useSimpleSummaryProvider="true" />
 
-        <SwitchPreference
-            app:key="pcapng_format"
-            app:title="@string/pcapng_format"
-            app:iconSpaceReserved="false"
-            app:summary="@string/pcapng_format_summary"
-            app:defaultValue="true" />
-
-        <SwitchPreference
-            app:key="block_quic"
+        <DropDownPreference
+            app:key="block_quic_mode"
             app:title="@string/block_quick"
+            android:entries="@array/block_quic_labels"
+            android:entryValues="@array/block_quic"
             app:iconSpaceReserved="false"
-            app:summary="@string/block_quick_summary"
-            app:defaultValue="false" />
+            app:defaultValue="never"
+            app:useSimpleSummaryProvider="true" />
 
         <SwitchPreference
             app:key="full_payload"
@@ -129,6 +132,28 @@
             app:summary="@string/vpn_exemptions_summary"
             app:iconSpaceReserved="false" />
 
+        <SwitchPreference
+            app:key="pcapng_format"
+            app:title="@string/pcapng_format"
+            app:iconSpaceReserved="false"
+            app:summary="@string/pcapng_format_summary"
+            app:defaultValue="true" />
+
+        <SwitchPreference
+            app:key="dump_extensions"
+            app:title="@string/dump_extensions"
+            app:iconSpaceReserved="false"
+            app:summary="@string/dump_extensions_summary"
+            app:defaultValue="false" />
+
+        <Preference
+            app:key="dump_extensions_how_to"
+            app:title="@string/dump_extensions_how_to"
+            app:iconSpaceReserved="false">
+            <intent android:action="android.intent.action.VIEW"
+                android:data="https://emanuele-f.github.io/PCAPdroid/advanced_features#45-pcapdroid-extensions" />
+        </Preference>
+
         <Preference
             android:key="dns_settings"
             app:title="@string/dns_servers"
@@ -144,19 +169,11 @@
             android:defaultValue="false" />
 
         <SwitchPreference
-            app:key="pcapdroid_trailer"
-            app:title="@string/pcapdroid_trailer"
+            app:key="restart_on_disconnect"
+            android:title="@string/restart_on_disconnection"
             app:iconSpaceReserved="false"
-            app:summary="@string/pcapdroid_trailer_summary"
-            app:defaultValue="false" />
-
-        <Preference
-            app:key="trailer_how_to"
-            app:title="@string/trailer_how_to"
-            app:iconSpaceReserved="false">
-            <intent android:action="android.intent.action.VIEW"
-                android:data="https://emanuele-f.github.io/PCAPdroid/advanced_features#45-pcapdroid-trailer" />
-        </Preference>
+            app:summary="@string/restart_on_disconnection_summary"
+            android:defaultValue="false" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/security" app:iconSpaceReserved="false" app:key="security">
@@ -178,15 +195,6 @@
 
     <PreferenceCategory app:title="@string/other_prefs" app:iconSpaceReserved="false" >
         <DropDownPreference
-            app:key="app_theme"
-            app:title="@string/app_theme"
-            android:entries="@array/app_theme_labels"
-            android:entryValues="@array/app_theme"
-            app:iconSpaceReserved="false"
-            app:defaultValue="system"
-            app:useSimpleSummaryProvider="true"/>
-
-        <DropDownPreference
             app:key="app_language"
             app:title="@string/app_language"
             android:entries="@array/app_languages_labels"
@@ -194,6 +202,13 @@
             app:iconSpaceReserved="false"
             app:defaultValue="system"
             app:useSimpleSummaryProvider="true"/>
+
+        <Preference
+            app:key="app_language_external"
+            app:title="@string/app_language"
+            app:isPreferenceVisible="false"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
 
         <Preference
             app:key="port_mapping"

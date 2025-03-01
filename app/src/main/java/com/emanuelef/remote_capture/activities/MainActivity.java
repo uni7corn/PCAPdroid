@@ -38,7 +38,10 @@ import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.pm.PackageInfoCompat;
+import androidx.core.graphics.Insets;
 import androidx.core.view.GravityCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
@@ -53,14 +56,18 @@ import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.TextView;
 
 import com.emanuelef.remote_capture.AppsResolver;
 import com.emanuelef.remote_capture.Billing;
 import com.emanuelef.remote_capture.BuildConfig;
 import com.emanuelef.remote_capture.CaptureHelper;
+import com.emanuelef.remote_capture.ConnectionsRegister;
 import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.MitmReceiver;
+import com.emanuelef.remote_capture.PCAPdroid;
+import com.emanuelef.remote_capture.VpnReconnectService;
 import com.emanuelef.remote_capture.activities.prefs.SettingsActivity;
 import com.emanuelef.remote_capture.fragments.ConnectionsFragment;
 import com.emanuelef.remote_capture.fragments.StatusFragment;
@@ -68,6 +75,7 @@ import com.emanuelef.remote_capture.interfaces.AppStateListener;
 import com.emanuelef.remote_capture.model.AppDescriptor;
 import com.emanuelef.remote_capture.model.AppState;
 import com.emanuelef.remote_capture.CaptureService;
+import com.emanuelef.remote_capture.model.Blocklist;
 import com.emanuelef.remote_capture.model.CaptureSettings;
 import com.emanuelef.remote_capture.MitmAddon;
 import com.emanuelef.remote_capture.model.CaptureStats;
@@ -81,8 +89,11 @@ import com.google.android.material.tabs.TabLayoutMediator;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.HashSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends BaseActivity implements NavigationView.OnNavigationItemSelectedListener {
     private Billing mIab;
@@ -94,9 +105,17 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
     private SharedPreferences mPrefs;
     private NavigationView mNavView;
     private CaptureHelper mCapHelper;
+    private AlertDialog mPcapLoadDialog;
+    private Uri mPcapUri;
+    private ExecutorService mPcapExecutor;
 
     // helps detecting duplicate state reporting of STOPPED in MutableLiveData
     private boolean mWasStarted = false;
+    private boolean mStartPressed = false;
+    private boolean mDecEmptyRulesNoticeShown = false;
+    private boolean mExtensionsNoticeShown = false;
+    private boolean mOpenPcapDecrypt = false;
+    private boolean mDecryptPcap = false;
 
     private static final String TAG = "Main";
 
@@ -123,11 +142,16 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
             );
     private final ActivityResultLauncher<Intent> peerInfoLauncher =
             registerForActivityResult(new StartActivityForResult(), this::peerInfoResult);
+    private final ActivityResultLauncher<Intent> pcapFileOpenLauncher =
+            registerForActivityResult(new StartActivityForResult(), this::pcapFileOpenResult);
+    private final ActivityResultLauncher<Intent> keylogFileOpenLauncher =
+            registerForActivityResult(new StartActivityForResult(), this::keylogFileOpenResult);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         setTheme(R.style.AppTheme_NoActionBar);
         super.onCreate(savedInstanceState);
+
         setContentView(R.layout.main_activity);
         setTitle("PCAPdroid");
         mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
@@ -135,12 +159,17 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
         int appver = Prefs.getAppVersion(mPrefs);
         if(appver <= 0) {
             // First run, start on-boarding
+            // only refresh app version on on-boarding done
             Intent intent = new Intent(MainActivity.this, OnBoardingActivity.class);
             startActivity(intent);
             finish();
-            // only refresh app version on on-boarding done
-        } else
+            return;
+        } else {
+            if (appver < 73)
+                showWhatsNew();
+
             Prefs.refreshAppVersion(mPrefs);
+        }
 
         mIab = Billing.newInstance(this);
         mIab.setLicense(mIab.getLicense());
@@ -149,15 +178,16 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
         initAppState();
         checkPermissions();
 
-        mCapHelper = new CaptureHelper(this);
+        mCapHelper = new CaptureHelper(this, true);
         mCapHelper.setListener(success -> {
             if(!success) {
-                Log.w(TAG, "VPN request failed");
+                Log.w(TAG, "Capture start failed");
                 appStateReady();
             }
         });
 
         mPager = findViewById(R.id.pager);
+        Utils.fixViewPager2Insets(mPager);
         setupTabs();
 
         /* Register for service status */
@@ -187,6 +217,7 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
 
                 appStateReady();
                 mWasStarted = false;
+                mStartPressed = false;
             } else /* STOPPED -> STOPPED */
                 appStateReady();
         });
@@ -195,6 +226,10 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        if(!CaptureService.isServiceActive()) {
+            boolean ignored = getTmpPcapPath().delete();
+        }
 
         mCapHelper = null;
     }
@@ -226,6 +261,19 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
         mDrawer.addDrawerListener(toggle);
         toggle.syncState();
 
+        ViewCompat.setOnApplyWindowInsetsListener(mDrawer, (v, windowInsets) -> {
+            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                    WindowInsetsCompat.Type.displayCutout());
+
+            // layout hamburger menu and drawer when in horizontal orientation
+            ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) v.getLayoutParams();
+            mlp.leftMargin = insets.left;
+            mlp.rightMargin = insets.right;
+
+            // only pass down the vertical insets
+            return windowInsets.inset(insets.left, 0, insets.right, 0);
+        });
+
         mNavView = findViewById(R.id.nav_view);
         mNavView.setNavigationItemSelectedListener(this);
         View header = mNavView.getHeaderView(0);
@@ -245,6 +293,21 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
         });
     }
 
+    private void showWhatsNew() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.whats_new)
+                .setMessage(
+                        "- Select multiple target apps\n" +
+                        "- Button to copy the connections payload\n" +
+                        "- Android 14 support\n" +
+                        "- Integrations to run with Tor and DNSCrypt\n" +
+                        "- mitmproxy 10.1.6 and Doze fix\n" +
+                        "- Use your own mitmproxy addons (experimental)\n"
+                )
+                .setNeutralButton(R.string.ok, (dialogInterface, i) -> {})
+                .show();
+    }
+
     // keep this in a separate function, used by play billing code
     private void checkPaidDrawerEntries() {
         if(mNavView == null)
@@ -255,6 +318,7 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public void onBackPressed() {
         if(mDrawer.isDrawerOpen(GravityCompat.START))
             mDrawer.closeDrawer(GravityCompat.START, true);
@@ -527,6 +591,9 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
     public void appStateReady() {
         mState = AppState.ready;
         notifyAppState();
+
+        if(mPcapLoadDialog != null)
+            checkLoadedPcap();
     }
 
     public void appStateStarting() {
@@ -540,11 +607,70 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
 
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             checkVpnLockdownNotice();
+        else if(mStartPressed) { // STOPPED -> STARTED
+            if(CaptureService.isDecryptingTLS() && !CaptureService.isCapturingAsRoot())
+                checkDecryptionRulesNotice();
+        }
+
+        if (mIab.isFirewallVisible()) {
+            Blocklist blocklist = PCAPdroid.getInstance().getBlocklist();
+            if (blocklist.hasCountryRules())
+                blocklist.showNoticeIfGeoMissing(this);
+        }
     }
 
     public void appStateStopping() {
         mState = AppState.stopping;
         notifyAppState();
+    }
+
+    private void checkDecryptionRulesNotice() {
+        if(!mDecEmptyRulesNoticeShown && PCAPdroid.getInstance().getDecryptionList().isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setMessage(R.string.tls_decryption_no_rules_notice)
+                    .setPositiveButton(R.string.yes, (d, whichButton) -> {
+                        Intent intent = new Intent(MainActivity.this, EditListActivity.class);
+                        intent.putExtra(EditListActivity.LIST_TYPE_EXTRA, ListInfo.Type.DECRYPTION_LIST);
+                        startActivity(intent);
+                    })
+                    .setNegativeButton(R.string.no, (d, whichButton) -> {
+                    })
+                    .show();
+            mDecEmptyRulesNoticeShown = true;
+        }
+    }
+
+    private void dismissPcapLoadDialog() {
+        if(mPcapLoadDialog != null) {
+            mPcapLoadDialog.dismiss();
+            mPcapLoadDialog = null;
+        }
+
+        mPcapExecutor = null;
+        mPcapUri = null;
+    }
+
+    private void checkLoadedPcap() {
+        dismissPcapLoadDialog();
+
+        if(!CaptureService.hasError()) {
+            // pcap file loaded successfully
+            ConnectionsRegister reg = CaptureService.getConnsRegister();
+
+            if((reg != null) && (reg.getConnCount() > 0)
+                    && !CaptureService.hasSeenDumpExtensions()
+                    && !mExtensionsNoticeShown
+            ) {
+                new AlertDialog.Builder(this)
+                        .setMessage(getString(R.string.pcapdroid_trailer_notice,
+                                getString(R.string.unknown_app), getString(R.string.dump_extensions)))
+                        .setPositiveButton(R.string.ok, (d, whichButton) -> mExtensionsNoticeShown = true)
+                        .show();
+            } else
+                Utils.showToastLong(this, R.string.pcap_load_success);
+
+            mPager.setCurrentItem(POS_CONNECTIONS);
+        }
     }
 
     @RequiresApi(api = Build.VERSION_CODES.Q)
@@ -588,14 +714,21 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
     }*/
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         int id = item.getItemId();
 
         if(id == R.id.action_start) {
+            mStartPressed = true;
             startCapture();
             return true;
         } else if(id == R.id.action_stop) {
             stopCapture();
+            return true;
+        } else if(id == R.id.open_pcap) {
+            selectOpenPcapFile(false);
+            return true;
+        } else if(id == R.id.decrypt_pcap) {
+            selectOpenPcapFile(true);
             return true;
         } else if (id == R.id.action_settings) {
             Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
@@ -609,35 +742,76 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
     private void initAppState() {
         boolean is_active = CaptureService.isServiceActive();
 
-        if (!is_active)
+        if (!is_active) {
             appStateReady();
-        else
+
+            // PCAPdroid could have been closed unexpectedly (e.g. due to low memory), try to export
+            // the keylog file if exists
+            mKeylogFile = MitmReceiver.getKeylogFilePath(MainActivity.this);
+            if(mKeylogFile.exists())
+                startExportSslkeylogfile();
+        } else
             appStateRunning();
     }
 
-    private void doStartCaptureService() {
+    private void doStartCaptureService(String input_pcap_path) {
         appStateStarting();
-        mCapHelper.startCapture(new CaptureSettings(this, mPrefs));
+
+        PCAPdroid.getInstance().setIsDecryptingPcap(mDecryptPcap);
+        mDecryptPcap = false;
+
+        CaptureSettings settings = new CaptureSettings(this, mPrefs);
+        settings.input_pcap_path = input_pcap_path;
+
+        // to properly show decrypted PCAP files, full payload must be enabled
+        if (PCAPdroid.getInstance().isDecryptingPcap())
+            settings.full_payload = true;
+
+        mCapHelper.startCapture(settings);
     }
 
     public void startCapture() {
+        if (VpnReconnectService.isAvailable())
+            VpnReconnectService.stopService();
+
         if(showRemoteServerAlert())
             return;
 
-        if(Prefs.getTlsDecryptionEnabled(mPrefs) && MitmAddon.needsSetup(this)) {
-            Intent intent = new Intent(this, MitmSetupWizard.class);
-            startActivity(intent);
-            return;
+        if(Prefs.getTlsDecryptionEnabled(mPrefs)) {
+            if (MitmAddon.needsSetup(this)) {
+                Intent intent = new Intent(this, MitmSetupWizard.class);
+                startActivity(intent);
+                return;
+            }
+
+            if (!MitmAddon.getNewVersionAvailable(this).isEmpty()) {
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.update_available)
+                        .setMessage(R.string.mitm_addon_update_available)
+                        .setCancelable(false)
+                        .setPositiveButton(R.string.update_action, (dialog, whichButton) -> {
+                            Intent intent = new Intent(this, MitmSetupWizard.class);
+                            startActivity(intent);
+                        })
+                        .setNegativeButton(R.string.cancel_action, (dialog, whichButton) -> {
+                            MitmAddon.ignoreNewVersion(this);
+                            startCapture();
+                        })
+                        .show();
+
+                return;
+            }
         }
 
-        if(!Prefs.isRootCaptureEnabled(mPrefs) && Utils.hasVPNRunning(this)) {
+        if(!Prefs.isRootCaptureEnabled(mPrefs) && (Utils.getRunningVpn(this) != null)) {
             new AlertDialog.Builder(this)
+                    .setTitle(R.string.active_vpn_detected)
                     .setMessage(R.string.disconnect_vpn_confirm)
-                    .setPositiveButton(R.string.yes, (dialog, whichButton) -> doStartCaptureService())
-                    .setNegativeButton(R.string.no, (dialog, whichButton) -> {})
+                    .setPositiveButton(R.string.ok, (dialog, whichButton) -> doStartCaptureService(null))
+                    .setNegativeButton(R.string.cancel_action, (dialog, whichButton) -> {})
                     .show();
         } else
-            doStartCaptureService();
+            doStartCaptureService(null);
     }
 
     public void stopCapture() {
@@ -651,7 +825,7 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
             return false; // already acknowledged
 
         if(((Prefs.getDumpMode(mPrefs) == Prefs.DumpMode.UDP_EXPORTER) && !Utils.isLocalNetworkAddress(Prefs.getCollectorIp(mPrefs))) ||
-                (Prefs.getSocks5Enabled(mPrefs) && !Utils.isLocalNetworkAddress(Prefs.getSocks5ProxyAddress(mPrefs)))) {
+                (Prefs.getSocks5Enabled(mPrefs) && !Utils.isLocalNetworkAddress(Prefs.getSocks5ProxyHost(mPrefs)))) {
             Log.i(TAG, "Showing possible scan notice");
 
             AlertDialog dialog = new AlertDialog.Builder(this)
@@ -767,6 +941,173 @@ public class MainActivity extends BaseActivity implements NavigationView.OnNavig
                 Utils.showToastLong(this, R.string.export_failed);
             }
         }
-        mKeylogFile = null;
+
+        if(mKeylogFile != null) {
+            // upon closing the dialog, delete the keylog
+
+            //noinspection ResultOfMethodCallIgnored
+            mKeylogFile.delete();
+            mKeylogFile = null;
+        }
+    }
+
+    private void selectOpenPcapFile(boolean decrypt) {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+
+        Log.d(TAG, "selectOpenPcapFile: launching dialog");
+        mOpenPcapDecrypt = decrypt;
+        if (mOpenPcapDecrypt)
+            Utils.showToast(this, R.string.select_the_pcap_file);
+        Utils.launchFileDialog(this, intent, pcapFileOpenLauncher);
+    }
+
+    private void pcapFileOpenResult(final ActivityResult result) {
+        if ((result.getResultCode() == RESULT_OK) && (result.getData() != null)) {
+            Uri uri = result.getData().getData();
+            if (uri == null)
+                return;
+
+            Log.d(TAG, "pcapFileOpenResult: " + uri);
+            if (mOpenPcapDecrypt && !Utils.isPcapng(this, uri)) {
+                // Ask to select the keylog
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+
+                Log.i(TAG, "separate keylog file needed, launching dialog");
+                mPcapUri = uri;
+                Utils.showToast(this, R.string.select_the_keylog_file);
+                Utils.launchFileDialog(this, intent, keylogFileOpenLauncher);
+            } else
+                startOpenPcap(uri, null);
+        }
+    }
+
+    private void keylogFileOpenResult(final ActivityResult result) {
+        if ((result.getResultCode() == RESULT_OK) && (result.getData() != null)) {
+            Uri uri = result.getData().getData();
+            if (uri == null)
+                return;
+
+            Log.d(TAG, "keylogFileOpenResult: " + uri);
+            startOpenPcap(mPcapUri, uri);
+        }
+    }
+
+    private void startOpenPcap(Uri pcap_uri, Uri keylog_uri) {
+        mPcapExecutor = Executors.newSingleThreadExecutor();
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(R.string.loading);
+        builder.setMessage(R.string.pcap_load_in_progress);
+
+        mPcapLoadDialog = builder.create();
+        mPcapLoadDialog.setCanceledOnTouchOutside(false);
+        mPcapLoadDialog.setOnCancelListener(dialogInterface -> {
+            Log.i(TAG, "Abort PCAP loading");
+
+            if (mPcapExecutor != null) {
+                mPcapExecutor.shutdownNow();
+                mPcapExecutor = null;
+            }
+
+            if (CaptureService.isServiceActive())
+                CaptureService.stopService();
+
+            Utils.showToastLong(this, R.string.pcap_file_load_aborted);
+        });
+        mPcapLoadDialog.setOnDismissListener(dialog -> mPcapLoadDialog = null);
+        mPcapLoadDialog.show();
+
+        // get an actual file path which can be read from the native side
+        String path = Utils.uriToFilePath(this, pcap_uri);
+        if((path == null) || !Utils.isReadable(path)) {
+            // Unable to get a direct file path (e.g. for files in Downloads). Copy file to the
+            // cache directory
+            File out = getTmpPcapPath();
+            out.deleteOnExit();
+            String abs_path = out.getAbsolutePath();
+
+            // PCAP file can be big, copy in a different thread
+            mPcapExecutor.execute(() -> {
+                try (InputStream in_stream = getContentResolver().openInputStream(pcap_uri)) {
+                    Utils.copy(in_stream, out);
+                } catch (IOException | SecurityException e) {
+                    e.printStackTrace();
+
+                    runOnUiThread(() -> {
+                        Utils.showToastLong(this, R.string.copy_error);
+                        dismissPcapLoadDialog();
+                    });
+                    return;
+                }
+
+                runOnUiThread(() -> continueOpenPcap(abs_path, keylog_uri));
+            });
+        } else {
+            Log.d(TAG, "pcapFileOpenResult: path: " + path);
+            continueOpenPcap(path, keylog_uri);
+        }
+    }
+
+    private void continueOpenPcap(String pcap_path, Uri keylog_uri) {
+        //noinspection ResultOfMethodCallIgnored
+        getKeylogPath().delete();
+
+        if (mOpenPcapDecrypt)
+            loadKeylogfile(pcap_path, keylog_uri);
+        else
+            doStartCaptureService(pcap_path);
+    }
+
+    private void loadKeylogfile(String pcap_path, Uri keylog_uri) {
+        mPcapExecutor.execute(() -> {
+            File out = getKeylogPath();
+            out.deleteOnExit();
+
+            if (keylog_uri != null) {
+                // keylog is in a separate file
+                try (InputStream in_stream = getContentResolver().openInputStream(keylog_uri)) {
+                    Utils.copy(in_stream, out);
+                } catch (IOException | SecurityException e) {
+                    e.printStackTrace();
+
+                    runOnUiThread(() -> {
+                        Utils.showToastLong(this, R.string.keylog_read_error);
+                        dismissPcapLoadDialog();
+                    });
+                    return;
+                }
+
+                runOnUiThread(() -> {
+                    mDecryptPcap = true;
+                    doStartCaptureService(pcap_path);
+                });
+            } else {
+                // keylog is from PCAPNG
+                boolean success = CaptureService.extractKeylogFromPcapng(pcap_path, out.getAbsolutePath());
+
+                runOnUiThread(() -> {
+                    if (success && out.exists()) {
+                        mDecryptPcap = true;
+                        doStartCaptureService(pcap_path);
+                    } else {
+                        Utils.showToastLong(this, R.string.keylog_read_error);
+                        dismissPcapLoadDialog();
+                    }
+                });
+            }
+        });
+    }
+
+    private File getTmpPcapPath() {
+        return new File(getCacheDir() + "/tmp.pcap");
+    }
+
+    private File getKeylogPath() {
+        // NOTE: keep in sync with run_libpcap
+        return new File(getCacheDir() + "/sslkeylog.txt");
     }
 }

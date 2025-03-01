@@ -33,7 +33,6 @@
     <string name="rcvd_and_sent">%1$s 已接收 — %2$s 已发送</string>
     <string name="query">查询</string>
     <string name="host">主机</string>
-    <string name="app_filter">目标应用</string>
     <string name="ready">就绪</string>
     <string name="about">关于</string>
     <string name="status">状态</string>
@@ -60,7 +59,7 @@
     <string name="source_code">源代码</string>
     <string name="yes">是</string>
     <string name="no">否</string>
-    <string name="vpn_setup_failed">无法设置 VPN</string>
+    <string name="vpn_setup_failed">无法设置 VPN。确保禁用了“始终开启 VPN”</string>
     <string name="app_not_found">找不到应用 %1$s</string>
     <string name="stats">统计数据</string>
     <string name="active_connections">活动连接</string>
@@ -69,6 +68,9 @@
     <string name="open_sockets">开放套接字</string>
     <string name="bytes_sent">已发送字节数</string>
     <string name="bytes_rcvd">已接收字节数</string>
+    <string name="ipv6_bytes_sent">已发送IPv6字节数</string>
+    <string name="ipv6_bytes_rcvd">已接收IPv6字节数</string>
+    <string name="ipv6_bytes_percentage">IPv6字节数占比</string>
     <string name="packets_sent">已发送数据包</string>
     <string name="packets_rcvd">已接收数据包</string>
     <string name="dns_queries">DNS 查询</string>
@@ -77,7 +79,7 @@
     <string name="dns_server">DNS 服务器</string>
     <string name="apps">应用程序</string>
     <string name="pcap_file">PCAP 文件</string>
-    <string name="pcap_file_info">在设备存储中创建一个 PCAP 文件</string>
+    <string name="pcap_file_info">在设备存储中创建一个 PCAP/Pcapng 文件</string>
     <string name="cannot_write_file">无法写文件</string>
     <string name="share">分享</string>
     <string name="delete">删除</string>
@@ -103,11 +105,7 @@
     <string name="lang_english">英语</string>
     <string name="system_default">系统默认</string>
     <string name="no_activity_file_selection">没有找到应用来处理选中的文件</string>
-    <string name="theme_light">浅色</string>
-    <string name="theme_dark">深色</string>
-    <string name="app_theme">主题</string>
     <string name="socks5_proxy">启用 SOCKS5 代理</string>
-    <string name="proxy_ip_address">代理 IP 地址</string>
     <string name="proxy_port">代理端口</string>
     <string name="root_capture">以 root 用户身份捕获流量</string>
     <string name="donate">捐赠</string>
@@ -134,9 +132,6 @@
     <string name="unknown_app_info">\"未知\" 标记无法确定来自什么应用的连接</string>
     <string name="packets_dropped">丢弃的数据包</string>
     <string name="capture_prefs">捕获</string>
-    <string name="pcapdroid_trailer">PCAPdroid Trailer</string>
-    <string name="pcapdroid_trailer_summary">包含附加元数据 (如应用程序名称) 的 Trailer 将被添加到转储数据包中</string>
-    <string name="trailer_how_to">如何在 Wireshark 中显示 Trailer 数据</string>
     <string name="pending_transaction">请完成您的交易以兑换此功能</string>
     <string name="ctrl_consent">一个应用程序想要捕获你的设备流量。
 \n如果你不确定，最好拒绝</string>
@@ -153,7 +148,6 @@
     <string name="edit_list">编辑列表</string>
     <string name="hidden_connections_rules">隐藏的连接规则</string>
     <string name="list_is_empty">列表为空</string>
-    <string name="malicious_connection_app">检测到恶意连接 (%1$s)</string>
     <string name="show_only_malicious">恶意连接</string>
     <string name="security">安全</string>
     <string name="malware_detection">恶意软件检测</string>
@@ -227,7 +221,7 @@
     <string name="start_capture_first">先开始流量捕获</string>
     <string name="copied">已复制</string>
     <string name="can_use_purchased_feature">你现在可以使用购买的功能</string>
-    <string name="disconnect_vpn_confirm">断开活动的 VPN 应用程序并继续？</string>
+    <string name="disconnect_vpn_confirm">继续将断开与活动 VPN 的连接</string>
     <string name="loading_apps">正在加载应用…</string>
     <string name="open_nav_drawer">打开抽屉</string>
     <string name="close_nav_drawer">关闭抽屉</string>
@@ -238,28 +232,23 @@
     <string name="root_capture_summary">允许 PCAPdroid 与其他 VPN 应用程序一起运行</string>
     <string name="malware_whitelist_help">用户自定义白名单，禁止恶意软件检测。长按“恶意连接”创建取消将它们标记为恶意软件的规则</string>
     <string name="hidden_connections_help">隐藏连接列表条目的规则列表，以便关注相关的规则</string>
-    <string name="decryption_no_filter_warn">解密 TLS 时，请选择目标应用程序或使用解密白名单，以免失去 Internet 连接</string>
+    <string name="decryption_no_filter_warn">解密 TLS 时，请选择目标应用，以免失去 Internet 连接</string>
     <string name="built_on">构建于：%1$s</string>
     <string name="traffic_dump">流量转储</string>
     <string name="conn_status_active">活跃</string>
     <string name="socks5_info">SOCKS5 代理: %1$s:%2$d</string>
     <string name="phone_app_info">拨号服务</string>
     <string name="tls_decryption">TLS 解密</string>
-    <string name="tls_decryption_starting">TLS 解密正在启动…</string>
-    <string name="tls_decryption_running">TLS 解密运行中</string>
     <string name="traffic_inspection">流量检查</string>
     <string name="mitm_start_failed">无法启动 mitm 服务。尝试手动打开 mitm 附加组件应用并重试</string>
     <string name="mitm_setup_wizard">Mitm 设置向导</string>
     <string name="install_action">安装</string>
-    <string name="configure_action">配置</string>
-    <string name="grant_mitm_permission">给予 PCAPdroid 控制 mitm 附加组件的权限</string>
     <string name="checking_the_certificate">检查证书…</string>
     <string name="cert_exported_now_installed">证书已导出，从 Android 系统设置安装它</string>
     <string name="cert_installed_correctly">CA 证书已安装</string>
     <string name="cert_reinstall_required">CA 证书未安装，运行 mitim 设置向导</string>
-    <string name="mitm_addon_bad_version">PCAPdroid mitm 附加组件版本号不对。卸载它并重试</string>
-    <string name="mitm_addon_new_version">必须升级 PCAPdroid mitm 附加组件</string>
-    <string name="upgrade_action">升级</string>
+    <string name="mitm_addon_bad_version">PCAPdroid mitm 附加组件版本号不对。请安装版本 %1$s 并重试</string>
+    <string name="mitm_addon_new_version">必须更新 PCAPdroid mitm 附加组件</string>
     <string name="export_failed">导出失败</string>
     <string name="not_encrypted">未加密</string>
     <string name="request">请求</string>
@@ -269,7 +258,7 @@
     <string name="string_http_response">HTTP 响应</string>
     <string name="websocket">WebSocket</string>
     <string name="http">HTTP</string>
-    <string name="payload_truncated">载荷被截断。启用 \"%1$s\"显示完整内容</string>
+    <string name="payload_truncated">载荷被截断。要显示完整载荷，请停止流量捕获并从 PCAPdroid 设置开启 “%1$s”</string>
     <string name="rx_direction">接收</string>
     <string name="full_payload">完整载荷</string>
     <string name="not_decryptable">不可解密</string>
@@ -331,9 +320,7 @@
     <string name="app_intro_malware_detection">借助 <a href="%1$s">恶意软件检测</a>功能增强你设备的安全性
 \n
 \n通过使用最新的黑名单，它可以实时检测、阻止和警告恶意连接</string>
-    <string name="app_intro_traffic_dump">PCAPdroid 提供<a href="%1$s">多种方式</a>以标准的 PCAP 格式转储流量，以便深入分析
-\n
-\n通过 <a href="%2$s">trailer 选项</a>，可以向数据包添加应用名称，并在 Wireshark 中显示它们</string>
+    <string name="app_intro_traffic_dump">PCAPdroid 提供<a href="%1$s">多种方式</a>以标准的 PCAP 格式转储流量，以便深入分析 \n \n通过 <a href="%2$s"> PCAPdroid 扩展选项</a>，可以向数据包添加应用名称，并在 Wireshark 中显示它们</string>
     <string name="app_intro_welcome_msg">PCAPdroid 是一款隐私友好的应用，允许你追踪并分析你设备中应用所作的连接
 \n
 \n此外，它允许你导出流量的 PCAP 转储，提取元数据及其他更多功能！</string>
@@ -347,7 +334,9 @@
 \n你必须先从应用设置下载地理位置数据库</string>
     <string name="vpn_setup_msg">PCAPdroid 模拟 VPN，以便在没有获取根权限的情况下捕获网络流量。
 \n
-\n要开始捕获流量，你需要在下一个屏幕中接受 VPN 请求</string>
+\n要开始捕获流量，你需要在下一个屏幕中接受 VPN 请求。
+\n
+\n<b>注：</b>要继续下一步，请在 Android 设置中禁用“始终启用 VPN”</string>
     <string name="netd_block_missed">此连接由 netd 发起，因此无法被拦截</string>
     <string name="firewall_summary">阻断应用联网，配置特定域和 IP 地址规则。仅适用于非 root 捕获</string>
     <string name="block_private_dns_summary">检测并可能阻止私人 DNS 来检查 DNS 流量。禁用此选项会妨碍流量分析</string>
@@ -358,7 +347,6 @@
 \n如果你的设备部署了 Autostart 或类似软件来限制后台服务执行，请确保将 <a href="%1$s">PCAPdroid 加入白名单</a></string>
     <string name="block_quick">拦截 QUIC</string>
     <string name="block_private_dns">拦截私人 DNS</string>
-    <string name="block_quick_summary">拦截 QUIC 连接，使其有可能回退到可解密的 TLS。一些应用可能会停止工作</string>
     <string name="no_root_firewall">非 root 防火墙</string>
     <string name="mitm_setup_wizard_intro">该向导将指导你安装 PCAPdroid mitm 附加组件和证书颁发机构。需要这两样东西才能执行 <a href="%1$s">TLS 解密</a></string>
     <string name="welcome_to_pcapdroid">欢迎来到 PCAPdroid</string>
@@ -429,7 +417,6 @@
     <string name="firewall_purchase_msg">购买 <i>%1$s</i> 功能开始拦截连接</string>
     <string name="mitm_skip_notice">似乎未安装 mitm 证书。如果继续，解密会失败</string>
     <string name="mitm_wizard_description">配置设备以进行 TLS 解密</string>
-    <string name="whitelisted">已加入白名单</string>
     <string name="port_mapping">端口映射</string>
     <string name="required">必需的</string>
     <string name="items_delete_confirm">删除所选项目吗？</string>
@@ -437,15 +424,13 @@
     <string name="rule_exists">已定义了规则</string>
     <string name="dns_servers_summary">配置流量捕获期间要使用的 DNS 服务器</string>
     <string name="many_rules_warning">你正试图导入许多规则，可能使应用程序在某些交互期间无响应。你真想继续吗？</string>
-    <string name="pcapng_format_summary">用 PCAPNG 格式转储数据包，该格式允许内嵌 TLS 解密 secrets</string>
+    <string name="pcapng_format_summary">用 Pcapng 格式转储数据包，该格式更为灵活，允许内嵌 TLS 解密 secrets</string>
     <string name="use_system_dns_summary">如果可能，使用系统 DNS 服务器</string>
-    <string name="decryption_whitelist">流量解密白名单</string>
     <string name="port_mapping_summary">配置将连接重定向到不同主机或端口的端口映射规则</string>
     <string name="app_log">日志</string>
     <string name="no_data">无数据</string>
     <string name="mitm_addon">mitm 附加组件</string>
     <string name="malware_whitelist_action">白名单（恶意软件）…</string>
-    <string name="decryption_whitelist_action">白名单（解密）…</string>
     <string name="mitmproxy_opts">附加 mitmproxy 选项</string>
     <string name="original_port">原始端口</string>
     <string name="mitmproxy_opts_description">提供附加的 mitmproxy 选项</string>
@@ -461,9 +446,7 @@
     <string name="reset_stats_confirm">你真想重置这些统计数据吗？</string>
     <string name="destination_ip">目标 IP</string>
     <string name="port_mapping_exists">已定义端口映射</string>
-    <string name="decryption_whitelist_help">将特定连接排除于 TLS 解密之外的规则列表。可避免破坏部署了证书固定特性的应用/SDK 的正常工作。主机匹配生效的前提是之前看到过相应主机的 DNS 应答</string>
     <string name="ipv6_dns_server">IPv6 DNS 服务器</string>
-    <string name="decryption_whitelist_rules">流量解密白名单规则</string>
     <string name="pcapng_format">PCAPNG 格式</string>
     <string name="dns_servers">DNS 服务器</string>
     <string name="ipv4_dns_server">IPv4 DNS 服务器</string>
@@ -490,4 +473,90 @@
     <string name="license_error">许可证生成错误 [%1$d]: %2$s</string>
     <string name="requesting_license">正在请求许可代码，请稍等</string>
     <string name="license_activation_ok">已完成许可证激活</string>
+    <string name="decrypt_action">解密…</string>
+    <string name="decryption_rules_help">这些规则指定解密哪些连接。存在先前的 DNS 响应是基于 Host 的规则生效的前提</string>
+    <string name="injected">已注入</string>
+    <string name="decryption_rules">解密规则</string>
+    <string name="mitm_addon_starting">Mitm 附加组件启动中…</string>
+    <string name="mitm_addon_running">Mitim 附加组件运行中</string>
+    <string name="dont_decrypt_action">不解密…</string>
+    <string name="status_encrypted">已加密</string>
+    <string name="pcap_load_in_progress">正在加载捕获的文件，请等待</string>
+    <string name="capture_interface_open_error">无法打开流量捕获界面</string>
+    <string name="unsupported_pcap_datalink">文件有一个不受支持的数据链</string>
+    <string name="pcap_file_not_exists">指定的文件不存在</string>
+    <string name="root_capture_start_failed">流量捕获启动失败。请确保设备已使用 Magisk 获取根权限</string>
+    <string name="pcap_read_error">读取捕获文件时出错，详情请查看日志</string>
+    <string name="pcap_file_load_aborted">捕获文件加载中断</string>
+    <string name="copy_error">无法写入文件</string>
+    <string name="proxy_host">代理主机</string>
+    <string name="open_pcap_file">打开 PCAP/Pcapng 文件…</string>
+    <string name="pcap_load_success">已加载捕获的文件</string>
+    <string name="host_resolution_failed">无法解析主机 %1$s</string>
+    <string name="invalid_pcap_file">无效的捕获文件格式</string>
+    <string name="pcapdroid_trailer_notice">要显示实际应用而非“%1$s”，请在生成转储文件前确保开启了“%2$s”选项</string>
+    <string name="tls_decryption_no_rules_notice">TLS 解密仅应用于匹配所配置规则的连接。你想立即创建解密规则吗？</string>
+    <string name="decryption_info_no_rule">要解密此连接，从左侧抽屉或从连接列表的上下文菜单创建一条解密规则</string>
+    <string name="active_vpn_detected">检测到活动 VPN</string>
+    <string name="root_capture_pcapd_start_failure">流量捕获启动失败。请确保你授予了 PCAPdroid 根权限</string>
+    <string name="whats_new">更新记录</string>
+    <string name="mitm_doze_notice">电池优化可能干扰 mitim 附加组件的运作</string>
+    <string name="redirected">已重定向</string>
+    <string name="connection_redirected_port_map">由于端口映射规则，此连接已被重定向</string>
+    <string name="dnscrypt_how_to">如何在 PCAPDroid 中使用 DoH / DNSCrypt</string>
+    <string name="never">从不</string>
+    <string name="always">始终</string>
+    <string name="for_connections_to_decrypt">只对要解密的连接使用</string>
+    <string name="target_apps_help">选择要捕获流量的应用</string>
+    <string name="decrypt_quic_notice">当前不支持解密 QUIC 连接。作为临时解决方案，停止流量捕获并在 PCAPdroid 设置中选择拦截 QUIC 连接的选项</string>
+    <string name="target_apps">目标应用</string>
+    <string name="headers">标头</string>
+    <string name="body">正文</string>
+    <string name="both">两者</string>
+    <string name="export_ellipsis">导出…</string>
+    <string name="raw_bytes">原始字节</string>
+    <string name="restart_on_disconnection">连接断开时重启</string>
+    <string name="restart_on_disconnection_summary">在流量捕获被其他 VPN 应用停止后自动重启</string>
+    <string name="vpn_reconnection">VPN 重连</string>
+    <string name="vpn_reconnection_aborted">VPN 重连被终止</string>
+    <string name="waiting_for_vpn_disconnect">等待活跃 VPN 断开…</string>
+    <string name="update_action">更新</string>
+    <string name="update_available">有更新可用</string>
+    <string name="mitm_addon_update_available">有新的 mitim 附加组件更新可用。请更新获得最新的 bug 修复</string>
+    <string name="dump_extensions_summary">扩展的数据包转出格式，包含额外的元数据，比如发送/接收了一个给定数据包的应用</string>
+    <string name="errno_econnreset_msg">服务器突然关闭了连接，通常由于崩溃或笨拙的关闭</string>
+    <string name="cidr_val">CIDR： %1$s</string>
+    <string name="errno_enetunreach_msg">系统无法找到前往目标网络的有效路由</string>
+    <string name="malicious_connections_notice">黑名单可能包含误报。请在网上仔细检查 IP 地址/域名的信誉。你可以通过恶意软件白名单排除误报</string>
+    <string name="errno_econnaborted_msg">连接被终止，通过是由于网络转换</string>
+    <string name="keylog_read_error">SSL 密钥记录读取出错</string>
+    <string name="bytes_threshold">字节数临界值</string>
+    <string name="select_the_pcap_file">选择 PCAP/Pcapng 文件</string>
+    <string name="select_the_keylog_file">选择 SSL 密钥记录文件</string>
+    <string name="error_code_with_text">%1$s （错误 %2$d）</string>
+    <string name="errno_epipe">管道损坏</string>
+    <string name="errno_epipe_msg">服务器在数据传输期间意外地关闭了连接</string>
+    <string name="errno_enetdown">网络不通</string>
+    <string name="errno_enetdown_msg">网络接口不通或无法连接到网络</string>
+    <string name="errno_enetunreach">网络无法访问</string>
+    <string name="errno_enetreset">网络重置</string>
+    <string name="errno_enetreset_msg">网络连接被中间设备重置（如路由器或手机运营商）</string>
+    <string name="errno_econnaborted">连接被终止</string>
+    <string name="errno_econnreset">连接被 peer 重置</string>
+    <string name="errno_etimedout">连接超时</string>
+    <string name="errno_etimedout_msg">服务器响应时间过长，可能由于网络延迟或服务器忙</string>
+    <string name="errno_econnrefused">连接被拒绝</string>
+    <string name="errno_econnrefused_msg">服务器拒绝了连接，可能表示服务器太忙或出了问题</string>
+    <string name="errno_ehostunreach">没有到主机的路由</string>
+    <string name="errno_ehostunreach_msg">系统无法找到前往目标主机的路由</string>
+    <string name="dns_conn_info">DNS 将域名翻译成 IP 地址。实际数据通常经由后续的 HTTPS/TLS 连接进行交换</string>
+    <string name="tls_conn_info">TLS/HTTPS 流量是加密的。要检查这样的流量，你需要进行解密。 详情见 PCAPdroid <a href="%1$s">用户指南</a></string>
+    <string name="dump_extensions">PCAPdroid 扩展</string>
+    <string name="dump_extensions_how_to">如何在 Wireshark 中展示 PCAPdroid 转储扩展</string>
+    <string name="malicious_connection_description">来自 \"%1$s\" 应用的连接触发了恶意软件检测规则（%2$s）</string>
+    <string name="geo_db_missing">缺少地理位置数据库</string>
+    <string name="country_rules_warning">要使用基于地理位置的防火墙规则，请从 PCAPdroid 设置下载地理位置数据库，不然规则无效</string>
+    <string name="ip_address_or_cidr">IP 地址 / CIDR</string>
+    <string name="unsupported_pcap_file">不受支持的捕获文件格式</string>
+    <string name="decrypt_pcap_file">解密 PCAP/Pcapng 文件…</string>
 </resources>

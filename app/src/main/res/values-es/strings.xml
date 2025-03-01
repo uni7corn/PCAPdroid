@@ -8,8 +8,7 @@
     <string name="rcvd_and_sent">%1$s recibidos — %2$s enviados</string>
     <string name="query">Query</string>
     <string name="host">Host</string>
-    <string name="app_filter">App objetivo</string>
-    <string name="ready">Listo</string>
+    <string name="ready">Preparado</string>
     <string name="about">Acerca de</string>
     <string name="status">Estado</string>
     <string name="connections_view">Conexiones</string>
@@ -35,7 +34,7 @@
     <string name="source_code">Código fuente</string>
     <string name="yes">Sí</string>
     <string name="no">No</string>
-    <string name="vpn_setup_failed">No se pudo configurar la VPN</string>
+    <string name="vpn_setup_failed">No se ha podido configurar la VPN. Asegúrate de que la VPN siempre activa está desactivada</string>
     <string name="app_not_found">No se pudo encontrar la aplicación %1$s</string>
     <string name="stats">Estadísticas</string>
     <string name="active_connections">Conexiones activas</string>
@@ -76,13 +75,9 @@
     <string name="other_prefs">Otros</string>
     <string name="app_language">Idioma de la app</string>
     <string name="lang_english">Inglés</string>
-    <string name="system_default">Sistema</string>
+    <string name="system_default">Predeterminado del sistema</string>
     <string name="no_activity_file_selection">No se encontró una app como administrador de archivos</string>
-    <string name="theme_light">Claro</string>
-    <string name="theme_dark">Oscuro</string>
-    <string name="app_theme">Tema</string>
     <string name="socks5_proxy">SOCKS5</string>
-    <string name="proxy_ip_address">Dirección IP proxy</string>
     <string name="proxy_port">Puerto proxy</string>
     <string name="root_capture">Capturar como root</string>
     <string name="donate">Donar</string>
@@ -109,9 +104,6 @@
     <string name="unknown_app_info">\"Desconocido\" marca las conexiones cuya aplicación no se pudo determinar</string>
     <string name="packets_dropped">Paquetes perdidos</string>
     <string name="capture_prefs">Captura</string>
-    <string name="pcapdroid_trailer">Tráiler PCAPdroid</string>
-    <string name="pcapdroid_trailer_summary">Se añadirá un tráiler con metadatos adicionales (como el nombre de la aplicación) a los paquetes volcados</string>
-    <string name="trailer_how_to">Cómo mostrar los datos del remolque en Wireshark</string>
     <string name="pending_transaction">Por favor, completa tu transacción para canjear esta función</string>
     <string name="ctrl_consent">Una aplicación quiere capturar el tráfico de tu dispositivo.
 \nRecházala si no estás seguro</string>
@@ -128,7 +120,6 @@
     <string name="edit_list">Editar lista</string>
     <string name="hidden_connections_rules">Reglas de conexiones ocultas</string>
     <string name="list_is_empty">La lista está vacía</string>
-    <string name="malicious_connection_app">Conexión maliciosa detectada (%1$s)</string>
     <string name="show_only_malicious">Conexiones maliciosas</string>
     <string name="security">Securidad</string>
     <string name="malware_detection">Detección de malware</string>
@@ -193,12 +184,12 @@
     <string name="can_use_purchased_feature">Ahora puedes utilizar la función comprada</string>
     <string name="save_ok">Guardado</string>
     <string name="loading_apps">Cargando apps…</string>
-    <string name="decryption_no_filter_warn">Seleccione una aplicación de destino o utilice la lista blanca de descifrado al descifrar TLS para evitar perder la conexión a Internet</string>
+    <string name="decryption_no_filter_warn">Seleccione una aplicación de destino al descifrar TLS para evitar perder la conexión a Internet</string>
     <string name="file_saved_with_name">Archivo guardado como \"%1$s\"</string>
     <string name="loading">Cargando…</string>
     <string name="capture_not_running_status">La captura no se está ejecutando</string>
     <string name="capture_all_apps">Capturar tráfico de todas las aplicaciones</string>
-    <string name="disconnect_vpn_confirm">¿Desconectar la aplicación VPN activa y continuar\?</string>
+    <string name="disconnect_vpn_confirm">Continuar desconectará la VPN activa</string>
     <string name="enable_socks5_proxy_summary">Redirigir todas las conexiones TCP a un proxy SOCKS5</string>
     <string name="root_capture_summary">Permite que PCAPdroid funcione con otras aplicaciones VPN</string>
     <string name="hidden_connections_help">Lista de reglas para ocultar las entradas de la lista de conexiones y así poder centrarse en las relevantes</string>
@@ -222,15 +213,11 @@
     <string name="unblock">Desbloquear…</string>
     <string name="tls_decryption">Descifrado TLS</string>
     <string name="tls_decryption_summary">Descifra el tráfico SSL/TLS por medio de un ataque de intermediario (mitm). Esto podría funcionar con algunas aplicaciones, verifica la guía de usuario</string>
-    <string name="tls_decryption_starting">Descifrado TLS está comenzando…</string>
-    <string name="tls_decryption_running">Descifrado TLS se está ejecutando</string>
     <string name="traffic_inspection">Inspección de trafico</string>
     <string name="mitm_start_failed">No se ha podido iniciar el servicio mitm. Intenta abrir la aplicación mitm manualmente y vuelve a intentarlo</string>
     <string name="mitm_setup_wizard">Asistente de configuración mitm</string>
     <string name="install_action">Instalar</string>
     <string name="export_action">Exportar</string>
-    <string name="configure_action">Configurar</string>
-    <string name="grant_mitm_permission">Otorgar a PCAPdroid el permiso de controlar el complemento mitm</string>
     <string name="checking_the_certificate">Verificando el certificado…</string>
     <string name="cert_exported_now_installed">Certificado exportado, ahora instálalo en los ajustes de Android</string>
     <string name="ca_cert_export_failed">Un error ha ocurrido mientras se exportaba el certificado CA
@@ -262,7 +249,7 @@
 \nSi alguien te ha pedido que hagas esto, probablemente sea un intento de estafa</string>
     <string name="warning">Advertencia</string>
     <string name="paid_features_unlocked">Funciones de pago desbloqueadas. Reinicia la captura si se está ejecutando</string>
-    <string name="payload_truncated">El payload está truncado. Habilitar \"%1$s\" para mostrarlo completo</string>
+    <string name="payload_truncated">La carga útil está truncada. Para mostrarla completa, detén la captura y activa \"%1$s\" desde los ajustes de PCAPdroid</string>
     <string name="display_as">Mostrar como…</string>
     <string name="privacy_first">La privacidad es lo primero</string>
     <string name="permission_granted">El permiso %1$s fue concedido</string>
@@ -279,8 +266,7 @@
     <string name="mitm_wizard_description">Configura el dispositivo para el descifrado TLS</string>
     <string name="export_ca_certificate">Exporta el certificado PCAPDROID CA, abre \"Cifrado y Credenciales\" en Ajustes y selecciona \"Instalar certificado CA\"</string>
     <string name="install_ca_certificate">Instala el certificado PCAPDROID CA, selecciona \"VPN y aplicaciones\". Android te pedirá la contraseña</string>
-    <string name="upgrade_action">Actualizar</string>
-    <string name="mitm_addon_new_version">El complemento mitm debe ser actualizado</string>
+    <string name="mitm_addon_new_version">El complemento mitm de PCAPdroid debe actualizarse</string>
     <string name="export_failed">Exportación fallida</string>
     <string name="not_encrypted">No cifrado</string>
     <string name="request">Petición</string>
@@ -318,7 +304,7 @@
     <string name="action_unblock">Desbloquear</string>
     <string name="websocket">WebSocket</string>
     <string name="netd_block_missed">La conexión fue comenzada por netd, por tanto no se pudo bloquear</string>
-    <string name="mitm_addon_bad_version">Versión del complemento mitm incorrecta. Desinstálala y reinténtalo</string>
+    <string name="mitm_addon_bad_version">Versión del complemento mitm incorrecta. Instale la versión %1$s y reinténtalo</string>
     <string name="overview">Resumen</string>
     <string name="string_http_request">Petición HTTP</string>
     <string name="http">HTTP</string>
@@ -335,7 +321,6 @@
     <string name="action_block">Bloquear</string>
     <string name="firewall_summary">Bloquea el acceso a internet de aplicaciones, configura reglas específicas para dominios y direcciones IP. Solo funciona con la captura sin root</string>
     <string name="block_quick">Bloquear QUIC</string>
-    <string name="block_quick_summary">Bloquear las conexiones QUIC para recaer en TLS descifrable. Algunas aplicaciones pueden dejar de funcionar</string>
     <string name="app_intro_next_button">Siguiente</string>
     <string name="install_the_mitm_addon">Instala la extensión <a href="%1$s">complemento mitm</a></string>
     <string name="paid_feature">Funciones de pago</string>
@@ -356,9 +341,11 @@
     <string name="app_intro_geolocation_msg">PCAPdroid puede consultar una base de datos local para determinar el país de un servidor remoto
 \n
 \nPrimero deberás descargar la base de datos de geolocalización desde los ajustes de la aplicación</string>
-    <string name="vpn_setup_msg">PCAPdroid simula una VPN para capturar el tráfico de red sin root
+    <string name="vpn_setup_msg">PCAPdroid simula una VPN para capturar el tráfico de la red sin root.
 \n
-\nPara empezar a capturar, necesitas aceptar la solicitud VPN en la siguiente pantalla</string>
+\nPara iniciar la captura, debes aceptar la solicitud de la VPN en la pantalla siguiente.
+\n
+\n<b>NOTA:</b>para continuar, deshabilita cualquier VPN siempre activa configurada desde los ajustes de Android</string>
     <string name="permission_grant_fail">El permiso %1$s no pudo ser concedido</string>
     <string name="notifications_notice">La aplicación usa notificaciones para enviar alertas en caso de eventos anómalos. Concédele el permiso para enviarte notificaciones en la siguiente pantalla</string>
     <string name="vpn_exemptions">Excepciones VPN</string>
@@ -405,9 +392,7 @@
 \n
 \nUsando la última lista negra, puedes detectar, bloquear y advertir de conexiones peligrosas en tiempo real</string>
     <string name="malware_whitelist_action">Lista blanca (software malicioso)…</string>
-    <string name="decryption_whitelist_action">Lista blanca (descifrado)…</string>
     <string name="mitm_addon">complemento mitm</string>
-    <string name="whitelisted">Lista blanca</string>
     <string name="mitmproxy_opts">Opciones adicionales para mitmproxy</string>
     <string name="mitmproxy_opts_description">Opciones adicionales para mitmproxy</string>
     <string name="mitm_addon_error">Error al iniciar el complemento mitm. Comprueba el registro para más detalles</string>
@@ -434,9 +419,6 @@
     <string name="ipv6_dns_server">Servidor DNS IPv6</string>
     <string name="use_system_dns">Utilizar la DNS del sistema</string>
     <string name="use_system_dns_summary">Si es posible, utilice los servidores DNS del sistema</string>
-    <string name="decryption_whitelist_rules">Reglas de descifrado en lista blanca</string>
-    <string name="decryption_whitelist">Lista blanca de descifrado</string>
-    <string name="decryption_whitelist_help">Lista de reglas para excluir conexiones específicas del descifrado TLS. Útil para evitar romper apps/SDKs que emplean certificate pinning. La coincidencia de host sólo funciona si se ha visto una respuesta DNS previa</string>
     <string name="external_storage_perm_required">El permiso al almacenamiento externo es necesario</string>
     <string name="many_rules_warning">Estás intentando importar muchas reglas, lo que podría hacer que la aplicación no respondiera durante algunas interacciones. ¿De verdad quieres continuar\?</string>
     <string name="pcapng_format">Formato Pcapng</string>
@@ -465,4 +447,57 @@
     <string name="license_error">Error en la generación de licencia [%1$d]: %2$s</string>
     <string name="requesting_license">Solicitando un código de licencia, por favor espera</string>
     <string name="license_activation_ok">Completada la activación de la licencia</string>
+    <string name="mitm_addon_starting">El complemento Mitm está iniciándose…</string>
+    <string name="mitm_addon_running">El complemento Mitm se está ejecutando</string>
+    <string name="decryption_rules">Reglas de descifrado</string>
+    <string name="decryption_rules_help">Estas reglas especifican qué conexiones descifrar. Las reglas basadas en el host solo funcionan si se ve una respuesta de una DNS anterior</string>
+    <string name="status_encrypted">Encriptado</string>
+    <string name="injected">Inyectado</string>
+    <string name="decrypt_action">Descifrar…</string>
+    <string name="dont_decrypt_action">No descifrar…</string>
+    <string name="proxy_host">Host del proxy</string>
+    <string name="copy_error">No se ha podido escribir el archivo</string>
+    <string name="capture_interface_open_error">No se ha podido abrir la interfaz de captura</string>
+    <string name="pcap_file_not_exists">El archivo PCAP especificado no existe</string>
+    <string name="open_pcap_file">Abrir el archivo PCAP…</string>
+    <string name="pcap_load_success">Se ha cargado el archivo PCAP</string>
+    <string name="invalid_pcap_file">Fichero PCAP no válido</string>
+    <string name="root_capture_start_failed">Fallo del inicio de captura. Asegúrate de que el dispositivo está rooteado con Magisk</string>
+    <string name="pcap_read_error">Error de lectura del PCAP</string>
+    <string name="unsupported_pcap_datalink">El archivo PCAP tiene un enlace de datos no compatible</string>
+    <string name="pcap_file_load_aborted">Carga del fichero PCAP abortada</string>
+    <string name="host_resolution_failed">No se pudo resolver host %1$s</string>
+    <string name="pcapdroid_trailer_notice">Para mostrar las aplicaciones actuales en lugar de \"%1$s\", asegúrate de activar la opción \"%2$s\" antes de exportar el archivo PCAP</string>
+    <string name="decryption_info_no_rule">Esta conexión no se descifrará. Crea una regla de descifrado para descifrarla</string>
+    <string name="tls_decryption_no_rules_notice">El descifrado TLS sólo se aplica a las conexiones que coinciden con las reglas configuradas. ¿Deseas crear las reglas de descifrado ahora\?</string>
+    <string name="active_vpn_detected">Se ha detectado una VPN activa</string>
+    <string name="pcap_load_in_progress">Carga del fichero PCAP en curso, por favor espera</string>
+    <string name="root_capture_pcapd_start_failure">Fallo al realizar la captura. Asegúrate de conceder acceso root a PCAPdroid</string>
+    <string name="mitm_doze_notice">La optimización de la batería puede interferir con el addon mitm</string>
+    <string name="redirected">redirigido</string>
+    <string name="connection_redirected_port_map">Esta conexión ha sido redirigida debido a una regla de asignación de puertos</string>
+    <string name="dnscrypt_how_to">¿Cómo utilizar DoH / DNSCrypt con PCAPdroid?</string>
+    <string name="never">Nunca</string>
+    <string name="always">Siempre</string>
+    <string name="for_connections_to_decrypt">Solo para conexiones a descifrar</string>
+    <string name="target_apps">Aplicaciones de destino</string>
+    <string name="target_apps_help">Seleccione las aplicaciones que desea capturar</string>
+    <string name="headers">Encabezados</string>
+    <string name="body">Cuerpo</string>
+    <string name="both">Ambos</string>
+    <string name="whats_new">Novedades</string>
+    <string name="raw_bytes">Bytes sin formato</string>
+    <string name="decrypt_quic_notice">Actualmente no es posible descifrar QUIC. Como solución, detenga la captura y seleccione la opción de bloquear QUIC en los ajustes de PCAPdroid</string>
+    <string name="export_ellipsis">Exportar…</string>
+    <string name="vpn_reconnection">Reconectar a la VPN</string>
+    <string name="vpn_reconnection_aborted">Reconexión a la VPN abortada</string>
+    <string name="waiting_for_vpn_disconnect">Esperando a que la VPN activa se desconecte…</string>
+    <string name="restart_on_disconnection">Reiniciar al desconectarse</string>
+    <string name="restart_on_disconnection_summary">Reiniciar automáticamente la captura después de ser detenido por otras aplicaciones VPN</string>
+    <string name="ipv6_bytes_rcvd">Bytes IPv6 recibidos</string>
+    <string name="ipv6_bytes_percentage">Porcentaje de bytes IPv6</string>
+    <string name="ipv6_bytes_sent">Bytes IPv6 enviados</string>
+    <string name="update_available">Actualización disponible</string>
+    <string name="mitm_addon_update_available">Hay una nueva actualización del complemento MITM disponible. Actualiza para obtener las últimas correcciones de errores</string>
+    <string name="update_action">Actualizar</string>
 </resources>

@@ -3,6 +3,7 @@
     <string name="default_collector_ip" translatable="false">127.0.0.1</string>
     <string name="default_collector_port" translatable="false">1234</string>
     <string name="ip_and_port" translatable="false">%1$s:%2$d</string>
+    <string name="ipv6_and_port" translatable="false">[%1$s]:%2$d</string>
     <string name="app_and_proto" translatable="false">%1$s (%2$s)</string>
     <string name="sni" translatable="false">SNI</string>
     <string name="url" translatable="false">URL</string>
@@ -27,11 +28,22 @@
         - IP Geolocation by <a href='https://db-ip.com'>DB-IP</a>\n\n
         - AppIntro: <a href='https://github.com/AppIntro/AppIntro/blob/main/LICENSE'>Apache-2.0</a>\n\n
         - QrGenerator: <a href='https://github.com/androidmads/QRGenerator/blob/master/LICENSE.md'>MIT</a>\n\n
+        - Sparsehash: <a href='https://github.com/sparsehash/sparsehash/blob/master/COPYING'>BSD-3-Clause</a>\n\n
+        - CIDRUtils: <a href='https://github.com/edazdarevic/CIDRUtils'>MIT</a>\n\n
         - Font Awesome: <a href='https://fontawesome.com/license/free'>Licenses</a>\n\n
         - App icon by <a href="https://www.freepik.com" title="Freepik">Freepik</a> from <a href="https://www.flaticon.com/" title="Flaticon">flaticon</a>\n\n
         - SourceCodePro font: <a href='https://github.com/adobe-fonts/source-code-pro/blob/release/LICENSE.md'>OFL-1.1</a>\n\n
         </string>
-    <string name="connections_csv_fields" translatable="false">IPProto,SrcIP,SrcPort,DstIp,DstPort,UID,App,Proto,Status,Info,BytesSent,BytesRcvd,PktsSent,PktsRcvd,FirstSeen,LastSeen</string>
+    <string name="wireshark_licenses" translatable="false"><b>PCAP Decryption:</b><br />\n\n
+        - Wireshark: <a href='hhttps://github.com/wireshark/wireshark/blob/master/COPYING'>GPL-2.0</a>\n\n
+        - ushark: <a href='https://github.com/altafinance/ushark'>GPL-2.0</a>\n\n
+        - libiconv: <a href='https://www.gnu.org/software/libiconv'>LGPL-2.1</a>\n\n
+        - glib: <a href='https://gitlab.gnome.org/GNOME/glib/-/blob/main/COPYING'>LGPL-2.1</a>\n\n
+        - gpgerror: <a href='https://github.com/gpg/libgpg-error/blob/master/COPYING'>LGPL-2.1</a>\n\n
+        - gcrypt: <a href='https://gnupg.org/software/libgcrypt/index.html'>LGPL-2.1</a>\n\n
+        - nghttp2: <a href='https://github.com/nghttp2/nghttp2/blob/master/COPYING'>MIT</a>\n\n
+        </string>
+    <string name="connections_csv_fields" translatable="false">IPProto,SrcIP,SrcPort,DstIp,DstPort,UID,App,PackageName,Proto,Status,Info,BytesSent,BytesRcvd,PktsSent,PktsRcvd,FirstSeen,LastSeen</string>
     <string name="unlock_token" translatable="false">Unlock token</string>
 
     <!-- Localized -->
@@ -43,7 +55,6 @@
     <string name="rcvd_and_sent">%1$s received — %2$s sent</string>
     <string name="query">Query</string>
     <string name="host">Host</string>
-    <string name="app_filter">Target app</string>
     <string name="ready">Ready</string>
     <string name="about">About</string>
     <string name="status">Status</string>
@@ -71,7 +82,7 @@
     <string name="source_code">Source code</string>
     <string name="yes">Yes</string>
     <string name="no">No</string>
-    <string name="vpn_setup_failed">Could not set up the VPN</string>
+    <string name="vpn_setup_failed">Could not set up the VPN. Ensure that Always-on VPN is disabled</string>
     <string name="app_not_found">Could not find the "%1$s" app</string>
     <string name="stats">Stats</string>
     <string name="active_connections">Active connections</string>
@@ -80,6 +91,9 @@
     <string name="open_sockets">Open sockets</string>
     <string name="bytes_sent">Bytes sent</string>
     <string name="bytes_rcvd">Bytes received</string>
+    <string name="ipv6_bytes_sent">IPv6 bytes sent</string>
+    <string name="ipv6_bytes_rcvd">IPv6 bytes received</string>
+    <string name="ipv6_bytes_percentage">IPv6 bytes percentage</string>
     <string name="packets_sent">Packets sent</string>
     <string name="packets_rcvd">Packets received</string>
     <string name="dns_queries">DNS queries</string>
@@ -88,13 +102,14 @@
     <string name="dns_server">DNS server</string>
     <string name="apps">Apps</string>
     <string name="pcap_file">PCAP file</string>
-    <string name="pcap_file_info">Create a PCAP file in device storage</string>
+    <string name="pcap_file_info">Create a PCAP/Pcapng file in the device storage</string>
     <string name="cannot_write_file">Cannot write file</string>
     <string name="share">Share</string>
     <string name="delete">Delete</string>
     <string name="ok">OK</string>
     <string name="pcap_file_action">Traffic saved to the \"%1$s\" file (%2$s)</string>
     <string name="delete_error">Could not delete the file</string>
+    <string name="copy_error">Could not write the file</string>
     <string name="capture_running">Capture running</string>
     <string name="notification_msg">%1$s captured, %2$s connections</string>
     <string name="proto_and_port">%1$s, %2$d</string>
@@ -114,12 +129,9 @@
     <string name="other_prefs">Other</string>
     <string name="app_language">App language</string>
     <string name="lang_english">English</string>
-    <string name="system_default">System</string>
+    <string name="system_default">System default</string>
     <string name="no_activity_file_selection">No app found to handle file selection</string>
     <string name="file_saved_with_name">File saved as \"%1$s\"</string>
-    <string name="theme_light">Light</string>
-    <string name="theme_dark">Dark</string>
-    <string name="app_theme">Theme</string>
     <string name="socks5_proxy">SOCKS5</string>
     <string name="socks5_redirection">SOCKS5 redirection</string>
     <string name="socks5_summary">Configure the redirection to a SOCKS5 proxy</string>
@@ -127,7 +139,7 @@
     <string name="socks5_info">SOCKS5 proxy: %1$s:%2$d</string>
     <string name="socks5_auth">SOCKS5 authentication</string>
     <string name="socks5_auth_summary">Authenticate to the proxy via username and password</string>
-    <string name="proxy_ip_address">Proxy IP address</string>
+    <string name="proxy_host">Proxy host</string>
     <string name="proxy_port">Proxy port</string>
     <string name="root_capture">Capture as root</string>
     <string name="root_capture_summary">Allows PCAPdroid to run with other VPN apps</string>
@@ -137,10 +149,10 @@
     <string name="search">Search…</string>
     <string name="app_val">App: %1$s</string>
     <string name="ip_address_val">IP address: %1$s</string>
+    <string name="cidr_val">CIDR: %1$s</string>
     <string name="host_val">Host: %1$s</string>
     <string name="protocol_val">Protocol: %1$s</string>
     <string name="malware_whitelist_action">Whitelist (malware)…</string>
-    <string name="decryption_whitelist_action">Whitelist (decryption)…</string>
     <string name="hide">Hide…</string>
     <string name="n_selected">%1$d selected</string>
     <string name="select_all">Select all</string>
@@ -160,9 +172,9 @@
     <string name="unknown_app_info">\"Unknown\" marks connections whose app could not be determined</string>
     <string name="packets_dropped">Packets dropped</string>
     <string name="capture_prefs">Capture</string>
-    <string name="pcapdroid_trailer">PCAPdroid trailer</string>
-    <string name="pcapdroid_trailer_summary">A trailer containing additional metadata (such as the app name) will be added to the dumped packets</string>
-    <string name="trailer_how_to">How to display the trailer data in Wireshark</string>
+    <string name="dump_extensions">PCAPdroid extensions</string>
+    <string name="dump_extensions_summary">Extend the packet dump format with additional metadata, such as the app which sent/received a given packet</string>
+    <string name="dump_extensions_how_to">How to display the PCAPdroid dump extensions in Wireshark</string>
     <string name="pending_transaction">Please complete your transaction to redeem this feature</string>
     <string name="ctrl_consent">An app wants to capture your device traffic.\nDeny it if you are not sure</string>
     <string name="deny">Deny</string>
@@ -178,7 +190,6 @@
     <string name="edit_list">Edit list</string>
     <string name="hidden_connections_rules">Hidden connections rules</string>
     <string name="list_is_empty">The list is empty</string>
-    <string name="malicious_connection_app">Malicious connection detected (%1$s)</string>
     <string name="show_only_malicious">Malicious connections</string>
     <string name="show_only_cleartext">Cleartext connections</string>
     <string name="security">Security</string>
@@ -221,6 +232,8 @@
     <string name="n_rules">%1$s rules</string>
     <string name="last_update_val">Last update: %1$s</string>
     <string name="malicious_connections">Malicious connections</string>
+    <string name="malicious_connection_description">A connection from app \"%1$s\" triggered a malware detection rule (%2$s)</string>
+    <string name="malicious_connections_notice">Blacklists may contain false positives. Be sure to double check the IP address/domain reputation online. You can exclude false positives via the malware whitelist</string>
     <string name="updated_blacklists">Updated blacklists</string>
     <string name="connections_checked">Connections checked</string>
     <string name="last_blacklists_update">Last update</string>
@@ -232,7 +245,7 @@
     <string name="malware_detection_learn_more">Learn more about the malware detection feature</string>
     <string name="private_dns_message_notice">Private DNS prevents PCAPdroid from inspecting the DNS traffic. You can turn it off from the Android network settings</string>
     <string name="private_dns_hinders_detection">Private DNS hinders detection</string>
-    <string name="decryption_no_filter_warn">Select a target app or use the decryption whitelist when decrypting TLS to avoid losing your connection to the Internet</string>
+    <string name="decryption_no_filter_warn">Select a target app when decrypting TLS to avoid losing your connection to the Internet</string>
     <string name="block">Block…</string>
     <string name="unblock">Unblock…</string>
     <string name="firewall">Firewall</string>
@@ -259,7 +272,7 @@
     <string name="start_capture_first">Start the capture first</string>
     <string name="copied">Copied</string>
     <string name="can_use_purchased_feature">You can now use the purchased feature</string>
-    <string name="disconnect_vpn_confirm">Disconnect the active VPN app and continue?</string>
+    <string name="disconnect_vpn_confirm">Continuing will disconnect the active VPN</string>
     <string name="loading_apps">Loading apps…</string>
     <string name="open_nav_drawer">Open drawer</string>
     <string name="close_nav_drawer">Close drawer</string>
@@ -267,16 +280,13 @@
     <string name="save_ok">Saved</string>
     <string name="tls_decryption">TLS decryption</string>
     <string name="tls_decryption_summary">Decrypt the SSL/TLS traffic by performing mitm. This may now work with some apps, check out the user guide</string>
-    <string name="tls_decryption_starting">TLS decryption is starting…</string>
-    <string name="tls_decryption_running">TLS decryption is running</string>
     <string name="traffic_inspection">Traffic inspection</string>
     <string name="mitm_start_failed">Could not start the mitm service. Try to open the mitm addon app manually and retry</string>
     <string name="mitm_setup_wizard">Mitm setup wizard</string>
     <string name="install_action">Install</string>
     <string name="export_action">Export</string>
+    <string name="export_ellipsis">Export…</string>
     <string name="install_the_mitm_addon">Install the PCAPdroid <a href='%1$s'>mitm addon</a></string>
-    <string name="configure_action">Configure</string>
-    <string name="grant_mitm_permission">Give PCAPdroid the permission to control the mitm addon</string>
     <string name="export_ca_certificate">Export the PCAPdroid CA certificate, then open the Android \"Encryption &amp; Credentials\" settings and choose install it as a \"CA certificate\"</string>
     <string name="install_ca_certificate">Install the PCAPdroid CA certificate, choosing \"VPN and apps\". Android will ask for your lockscreen or password</string>
     <string name="checking_the_certificate">Checking the certificate…</string>
@@ -284,10 +294,12 @@
     <string name="cert_exported_now_installed">Certificate exported, now install it from the Android settings</string>
     <string name="cert_installed_correctly">The CA certificate is installed</string>
     <string name="cert_reinstall_required">The CA certificate is not installed, run the mitm setup wizard</string>
-    <string name="mitm_addon_bad_version">Bad PCAPdroid mitm addon version. Uninstall it and retry</string>
-    <string name="mitm_addon_new_version">The PCAPdroid mitm addon must be upgraded</string>
+    <string name="mitm_addon_bad_version">Bad PCAPdroid mitm addon version. Please install version %1$s and retry</string>
+    <string name="update_available">Update available</string>
+    <string name="mitm_addon_update_available">A new mitm addon update is available. Update to get the latest bug fixes</string>
+    <string name="mitm_addon_new_version">The PCAPdroid mitm addon must be updated</string>
     <string name="mitm_addon">mitm addon</string>
-    <string name="upgrade_action">Upgrade</string>
+    <string name="update_action">Update</string>
     <string name="export_failed">Export failed</string>
     <string name="not_encrypted">Not encrypted</string>
     <string name="request">Request</string>
@@ -295,7 +307,7 @@
     <string name="overview">Overview</string>
     <string name="string_http_request">HTTP request</string>
     <string name="string_http_response">HTTP response</string>
-    <string name="payload_truncated">Payload is truncated. Enable \"%1$s\" to show it in full</string>
+    <string name="payload_truncated">Payload is truncated. To show it in full, stop the capture and enable \"%1$s\" from the PCAPdroid settings</string>
     <string name="websocket">WebSocket</string>
     <string name="http">HTTP</string>
     <string name="payload">Payload</string>
@@ -305,7 +317,6 @@
     <string name="full_payload_summary">Show the full connections payload (e.g. the full HTTP request and response). This requires a lot of memory, don\'t use in the long run</string>
     <string name="not_decryptable">Not decryptable</string>
     <string name="decrypted">Decrypted</string>
-    <string name="whitelisted">Whitelisted</string>
     <string name="decryption">Decryption</string>
     <string name="decryption_filter">Decryption: %1$s</string>
     <string name="connection_start_not_seen">PCAPdroid has not seen the start of this connection. Some information may be missing</string>
@@ -319,8 +330,11 @@
     <string name="geolocation_summary">Show country and ASN info by performing offline lookups</string>
     <string name="downloading">Downloading…</string>
     <string name="download_in_progress">Download in progress, please wait</string>
+    <string name="pcap_load_in_progress">Capture file loading in progress, please wait</string>
     <string name="download_failed">Download failed</string>
     <string name="geo_db_not_found">Database not found. Geolocation is disabled</string>
+    <string name="geo_db_missing">Geolocation database missing</string>
+    <string name="country_rules_warning">To use country-based firewall rules, download the geolocation database from the PCAPdroid settings, otherwise country-based rules will be ineffective</string>
     <string name="database">Database</string>
     <string name="built_on">Built on: %1$s</string>
     <string name="geo_db_download">Tap to download the latest database. New databases are available monthly</string>
@@ -350,7 +364,6 @@
     <string name="firewall_summary">Block internet access to apps, configure rules for specific domains and IP addresses. Only works with the non-root capture</string>
     <string name="no_root_firewall">No-root firewall</string>
     <string name="block_quick">Block QUIC</string>
-    <string name="block_quick_summary">Block QUIC connections to possibly fall back to decryptable TLS. Some apps may stop working</string>
     <string name="block_private_dns">Block private DNS</string>
     <string name="block_private_dns_summary">Detect and possibly block private DNS to inspect DNS traffic. Disabling this can hinder traffic analysis</string>
     <string name="mitm_setup_wizard_intro">This wizard will guide you through the installation of the PCAPdroid mitm addon and certification authority, which are needed to perform the <a href='%1$s'>TLS decryption</a></string>
@@ -365,11 +378,11 @@
     <string name="app_intro_privacy_msg">The app does not employ any tracking, analytics or phoning-home anti-features\n\nHow can you be sure? Check out its <a href='%1$s'>privacy policy</a> and its <a href='%2$s'>source code</a></string>
     <string name="country_and_asn">Country and ASN</string>
     <string name="app_intro_geolocation_msg">PCAPdroid can query a local database to determine the country of a remote server\n\nYou must first download the geolocation database from the app settings</string>
-    <string name="vpn_setup_msg">PCAPdroid simulates a VPN in order to capture the network traffic without root.\n\nTo start the capture, you need to accept the VPN request in the next screen</string>
+    <string name="vpn_setup_msg">PCAPdroid simulates a VPN in order to capture the network traffic without root.\n\nTo start the capture, you need to accept the VPN request in the next screen.\n\n<b>NOTE:</b> to proceed, disable any configured Always-on VPN from the Android settings</string>
     <string name="app_intro_traffic_inspection">Inspecting HTTP requests, responses and raw data is easy, thanks to the built-in decoders\n\nGot an encrypted connection? You can enable the <a href='%1$s'>TLS decryption</a> to get the decrypted data</string>
     <string name="app_intro_firewall_msg">With the integrated <a href='%1$s'>Firewall</a> you can easily block Internet access to individual apps and domains\n\nCombine this with the built-in traffic visibility to get the ultimate tool to protect your privacy</string>
     <string name="app_intro_malware_detection">Enhance the security of your device with the <a href='%1$s'>malware detection</a> feature\n\nBy using up-to-date blacklists, it can detect, block and alert malicious connections in real-time</string>
-    <string name="app_intro_traffic_dump">PCAPdroid provides <a href='%1$s'>multiple ways</a> to dump the traffic in the standard PCAP format for further analysis\n\nVia the <a href='%2$s'>trailer option</a>, you can add app names to the packets and display them in Wireshark</string>
+    <string name="app_intro_traffic_dump">PCAPdroid provides <a href='%1$s'>multiple ways</a> to dump the traffic in the standard PCAP format for further analysis\n\nVia the <a href='%2$s'>PCAPdroid extensions option</a>, you can add app names to the packets and display them in Wireshark</string>
     <string name="permission_granted">%1$s permission was granted</string>
     <string name="permission_grant_fail">%1$s permission could not be granted</string>
     <string name="connection_not_found">Could not find the given connection</string>
@@ -385,7 +398,7 @@
     <string name="ipv6_only">IPv6 only</string>
     <string name="ip_both">IPv4 and IPv6</string>
     <string name="notifications_notice">The app uses notifications to send alerts in case of anomalous events. Grant it the permission to send notifications in the next screen</string>
-    <string name="vpn_exemptions">VPN Exemptions</string>
+    <string name="vpn_exemptions">VPN exemptions</string>
     <string name="vpn_exemptions_summary">Exempt some apps from the VPN connection. Their traffic will not be monitored</string>
     <string name="no_matches_found">No matches</string>
     <string name="cleartext_connection">Cleartext</string>
@@ -442,6 +455,7 @@
     <string name="port_mapping_exists">Port mapping already defined</string>
     <string name="items_delete_confirm">Delete the selected items?</string>
     <string name="ip_address">IP address</string>
+    <string name="ip_address_or_cidr">IP address / CIDR</string>
     <string name="rule_exists">Rule already defined</string>
     <string name="dns_servers">DNS servers</string>
     <string name="dns_servers_summary">Configure the DNS servers to use during the capture</string>
@@ -449,13 +463,10 @@
     <string name="ipv6_dns_server">IPv6 DNS server</string>
     <string name="use_system_dns">Use system DNS</string>
     <string name="use_system_dns_summary">Use the system DNS servers if possible</string>
-    <string name="decryption_whitelist_rules">Decryption whitelist rules</string>
-    <string name="decryption_whitelist_help">List of rules to exclude specific connections from the TLS decryption. Useful to avoid breaking apps/SDKs employing certificate pinning. Host matching only works if a prior DNS reply is seen</string>
-    <string name="decryption_whitelist">Decryption whitelist</string>
     <string name="external_storage_perm_required">The external storage permission is required</string>
     <string name="many_rules_warning">You are trying to import many rules, which could make the app unresponsive during some interactions. Do you really want to continue?</string>
     <string name="pcapng_format">Pcapng format</string>
-    <string name="pcapng_format_summary">Dump packets in the pcapng dump format, which allows embedding TLS decryption secrets</string>
+    <string name="pcapng_format_summary">Dump packets in the Pcapng dump format, which is more flexible and allows embedding TLS decryption secrets</string>
     <string name="sort_by">Sort by</string>
     <string name="total_bytes">Total bytes</string>
     <string name="write_ext_storage_failed">Write to external storage failed. Check the app log for details</string>
@@ -480,4 +491,67 @@
     <string name="decrypt_action">Decrypt…</string>
     <string name="dont_decrypt_action">Don\'t decrypt…</string>
     <string name="status_encrypted">Encrypted</string>
+    <string name="injected">Injected</string>
+    <string name="open_pcap_file">Open PCAP/Pcapng file…</string>
+    <string name="pcap_load_success">Capture file loaded</string>
+    <string name="unsupported_pcap_file">Unsupported capture file format</string>
+    <string name="decrypt_pcap_file">Decrypt PCAP/Pcapng file…</string>
+    <string name="invalid_pcap_file">Invalid capture file format</string>
+    <string name="capture_interface_open_error">Could not open the capture interface</string>
+    <string name="unsupported_pcap_datalink">The file has an unsupported datalink</string>
+    <string name="pcap_file_not_exists">The specified file does not exist</string>
+    <string name="root_capture_start_failed">Capture start failure. Ensure that the device is rooted with Magisk</string>
+    <string name="root_capture_pcapd_start_failure">Capture start failure. Make sure you grant root access to PCAPdroid</string>
+    <string name="pcap_read_error">Error reading the capture file. Check the log for details</string>
+    <string name="keylog_read_error">SSL keylog read error</string>
+    <string name="pcap_file_load_aborted">Capture file loading aborted</string>
+    <string name="host_resolution_failed">"Could not resolve host %1$s</string>
+    <string name="pcapdroid_trailer_notice">To show the actual apps instead of \"%1$s\", be sure to enable the \"%2$s\" option before generating the dump</string>
+    <string name="decryption_info_no_rule">To decrypt this connection, create a decryption rule from the left drawer or from the contextual menu in the Connections list</string>
+    <string name="tls_decryption_no_rules_notice">TLS decryption is only applied to connections that match the configured rules. Do you want to create decryption rules now?</string>
+    <string name="active_vpn_detected">Active VPN detected</string>
+    <string name="mitm_doze_notice">Battery optimization may interfere with the mitm addon</string>
+    <string name="redirected">redirected</string>
+    <string name="connection_redirected_port_map">This connection has been redirected due to a port mapping rule</string>
+    <string name="dnscrypt_how_to">How to use DoH / DNSCrypt with PCAPdroid</string>
+    <string name="never">Never</string>
+    <string name="always">Always</string>
+    <string name="for_connections_to_decrypt">Only for connections to decrypt</string>
+    <string name="decrypt_quic_notice">Decrypting QUIC is currently not supported. As a workaround, stop the capture and select the option to block QUIC in the PCAPdroid settings</string>
+    <string name="target_apps">Target apps</string>
+    <string name="target_apps_help">Select the applications to capture</string>
+    <string name="headers">Headers</string>
+    <string name="body">Body</string>
+    <string name="both">Both</string>
+    <string name="whats_new">What\'s new</string>
+    <string name="raw_bytes">Raw bytes</string>
+    <string name="restart_on_disconnection">Restart on disconnection</string>
+    <string name="restart_on_disconnection_summary">Automatically restart the capture after being stopped by other VPN apps</string>
+    <string name="vpn_reconnection">VPN reconnection</string>
+    <string name="vpn_reconnection_aborted">VPN reconnection aborted</string>
+    <string name="waiting_for_vpn_disconnect">Waiting for the active VPN to disconnect…</string>
+    <string name="bytes_threshold">Bytes threshold</string>
+    <string name="select_the_pcap_file">Select the PCAP/Pcapng file</string>
+    <string name="select_the_keylog_file">Select the SSL keylog file</string>
+    <string name="error_code_with_text">%1$s (error %2$d)</string>
+    <string name="errno_epipe">Broken pipe</string>
+    <string name="errno_epipe_msg">The server unexpectedly closed the connection during the data transfer</string>
+    <string name="errno_enetdown">Network is down</string>
+    <string name="errno_enetdown_msg">The network interface is down or it\'s unable to connect to the network</string>
+    <string name="errno_enetunreach">Network is unreachable</string>
+    <string name="errno_enetunreach_msg">The system cannot find a valid route to the destination network</string>
+    <string name="errno_enetreset">Network reset</string>
+    <string name="errno_enetreset_msg">The network connection was reset by an intermediary device (e.g. router or mobile carrier)</string>
+    <string name="errno_econnaborted">Connection aborted</string>
+    <string name="errno_econnaborted_msg">The connection was aborted, usually due to a network transition</string>
+    <string name="errno_econnreset">Connection reset by peer</string>
+    <string name="errno_econnreset_msg">The server abruptly closed the connection, usually due to a crash or ungraceful shutdown</string>
+    <string name="errno_etimedout">Connection timed out</string>
+    <string name="errno_etimedout_msg">The server took too long to respond, likely due to network delays or a busy server</string>
+    <string name="errno_econnrefused">Connection refused</string>
+    <string name="errno_econnrefused_msg">The server rejected the connection, which may indicate a too busy or malfunctioning server</string>
+    <string name="errno_ehostunreach">No route to host</string>
+    <string name="errno_ehostunreach_msg">The system cannot find a route to the destination host</string>
+    <string name="dns_conn_info">DNS translates a domain name into an IP address. The actual data is typically exchanged over subsequent HTTPS/TLS connections</string>
+    <string name="tls_conn_info">TLS/HTTPS traffic is encrypted. To inspect this traffic, you need to decrypt it. Check out the PCAPdroid <a href='%1$s'>user guide</a> for details</string>
 </resources>

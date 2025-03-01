@@ -26,6 +26,7 @@ import android.view.MenuItem;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.collection.ArraySet;
 import androidx.preference.PreferenceManager;
 
 import com.emanuelef.remote_capture.Log;
@@ -35,7 +36,6 @@ import com.emanuelef.remote_capture.fragments.AppsToggles;
 import com.emanuelef.remote_capture.model.AppDescriptor;
 import com.emanuelef.remote_capture.model.Prefs;
 
-import java.util.HashSet;
 import java.util.Set;
 
 public class VpnExemptionsActivity extends BaseActivity {
@@ -46,6 +46,7 @@ public class VpnExemptionsActivity extends BaseActivity {
         super.onCreate(savedInstanceState);
         setTitle(R.string.vpn_exemptions);
         setContentView(R.layout.fragment_activity);
+        displayBackAction();
 
         if(savedInstanceState != null)
             mFragment = (VpnExceptionsFragment) getSupportFragmentManager().getFragment(savedInstanceState, "fragment");
@@ -64,15 +65,7 @@ public class VpnExemptionsActivity extends BaseActivity {
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if(item.getItemId() == android.R.id.home) {
-            onBackPressed();
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
-    }
-
-    @Override
+    @SuppressWarnings("deprecation")
     public void onBackPressed() {
         if(mFragment.onBackPressed())
             return;
@@ -82,7 +75,7 @@ public class VpnExemptionsActivity extends BaseActivity {
 
     public static class VpnExceptionsFragment extends AppsToggles {
         private static final String TAG = "VpnExceptions";
-        private final Set<String> mExcludedApps = new HashSet<>();
+        private final Set<String> mExcludedApps = new ArraySet<>();
         private @Nullable SharedPreferences mPrefs;
 
         @Override

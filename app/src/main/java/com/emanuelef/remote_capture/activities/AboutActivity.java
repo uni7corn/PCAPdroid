@@ -14,16 +14,14 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-25 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.activities;
 
 import android.app.Service;
 import android.content.Intent;
-import android.content.res.Resources;
 import android.graphics.Bitmap;
-import android.graphics.Point;
 import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
@@ -35,13 +33,11 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.text.method.LinkMovementMethod;
 import android.util.TypedValue;
-import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -53,12 +49,17 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
 import androidx.core.text.HtmlCompat;
 import androidx.core.view.MenuProvider;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.emanuelef.remote_capture.Billing;
 import com.emanuelef.remote_capture.CaptureService;
 import com.emanuelef.remote_capture.Log;
+import com.emanuelef.remote_capture.MitmAddon;
+import com.emanuelef.remote_capture.PCAPdroid;
 import com.emanuelef.remote_capture.R;
 import com.emanuelef.remote_capture.Utils;
 import com.emanuelef.remote_capture.model.Prefs;
@@ -94,12 +95,24 @@ public class AboutActivity extends BaseActivity implements MenuProvider {
         setContentView(R.layout.about_activity);
         addMenuProvider(this);
 
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.scrollView), (v, windowInsets) -> {
+            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                    WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(insets.left, insets.top, insets.right, 0);
+
+            return WindowInsetsCompat.CONSUMED;
+        });
+
         mHandler = new Handler(Looper.getMainLooper());
         TextView appVersion = findViewById(R.id.app_version);
         appVersion.setText("PCAPdroid " + Utils.getAppVersion(this));
 
         ((TextView)findViewById(R.id.app_license)).setMovementMethod(LinkMovementMethod.getInstance());
         ((TextView)findViewById(R.id.opensource_licenses)).setMovementMethod(LinkMovementMethod.getInstance());
+
+        TextView wsLicenses = findViewById(R.id.wireshark_licenses);
+        wsLicenses.setMovementMethod(LinkMovementMethod.getInstance());
+        wsLicenses.setVisibility(PCAPdroid.getInstance().isUsharkAvailable() ? View.VISIBLE : View.GONE);
 
         TextView sourceLink = findViewById(R.id.app_source_link);
         String localized = sourceLink.getText().toString();
@@ -151,6 +164,7 @@ public class AboutActivity extends BaseActivity implements MenuProvider {
             String deviceInfo = Utils.getBuildInfo(this) + "\n\n" +
                     Prefs.asString(this);
 
+            // Private DNS
             Utils.PrivateDnsMode dns_mode = CaptureService.getPrivateDnsMode();
             if(dns_mode == null) {
                 if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -167,6 +181,12 @@ public class AboutActivity extends BaseActivity implements MenuProvider {
 
             if(dns_mode != null)
                 deviceInfo += "\n" + "PrivateDnsMode: " + dns_mode;
+
+            String mitm_version = MitmAddon.getInstalledVersionName(this);
+            if (!mitm_version.isEmpty()) {
+                deviceInfo += "\n" + "MitmAddonVersion: " + mitm_version;
+                deviceInfo += "\n" + "MitmBatteryOptimized: " + (MitmAddon.isDozeEnabled(this) ? "true" : "false");
+            }
 
             LayoutInflater inflater = LayoutInflater.from(this);
             View view = inflater.inflate(R.layout.scrollable_dialog, null);
@@ -289,7 +309,7 @@ public class AboutActivity extends BaseActivity implements MenuProvider {
                             return;
                         }
                         int timeout_ms = Integer.parseInt(timeout_s) * 1000;
-                        long deadline = SystemClock.uptimeMillis() + timeout_ms;
+                        long deadline = SystemClock.elapsedRealtime() + timeout_ms;
                         Log.d(TAG, "QR request_id=" + qr_req_id + ", timeout=" + timeout_ms + " ms");
 
                         // Step 2: generate QR code
@@ -337,12 +357,7 @@ public class AboutActivity extends BaseActivity implements MenuProvider {
                 maxDp,
                 getResources().getDisplayMetrics()
         );
-
-        WindowManager manager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        Display display = manager.getDefaultDisplay();
-        Point point = new Point();
-        display.getSize(point);
-        int smallerDimension = Math.min(Math.min(point.x, point.y) / 2, maxPx);
+        int smallerDimension = Math.min(Utils.getSmallerDisplayDimension(this) / 2, maxPx);
 
         String device_name = Utils.getDeviceName(this);
         if(device_name == null)
@@ -361,7 +376,7 @@ public class AboutActivity extends BaseActivity implements MenuProvider {
         View qrLoading = dialog.findViewById(R.id.qr_code_loading);
         View qrInfo = dialog.findViewById(R.id.qr_info_text);
 
-        mQrStartTime = SystemClock.uptimeMillis();
+        mQrStartTime = SystemClock.elapsedRealtime();
         mQrDeadline = deadline;
         updateQrProgress(dialog);
 
@@ -377,7 +392,7 @@ public class AboutActivity extends BaseActivity implements MenuProvider {
             return;
 
         long interval = mQrDeadline - mQrStartTime;
-        int progress = Math.min((int)((SystemClock.uptimeMillis() - mQrStartTime) * 100 / interval), 100);
+        int progress = Math.min((int)((SystemClock.elapsedRealtime() - mQrStartTime) * 100 / interval), 100);
         qrProgress.setProgress(100 - progress);
 
         mHandler.postDelayed(() -> updateQrProgress(dialog), 1000);

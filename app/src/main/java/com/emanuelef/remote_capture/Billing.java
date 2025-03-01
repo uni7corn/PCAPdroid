@@ -24,6 +24,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.provider.Settings;
 
+import androidx.collection.ArraySet;
 import androidx.preference.PreferenceManager;
 
 import com.emanuelef.remote_capture.model.Prefs;
@@ -39,7 +40,6 @@ import java.security.SignatureException;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -70,14 +70,16 @@ public class Billing {
             R.string.can_use_purchased_feature, R.drawable.ic_shopping_cart,
             R.string.firewall_summary, R.string.no_root_firewall,
             R.string.unlock_token, R.string.unlock_token_summary, R.string.unlock_token_error,
-            R.string.license_service_unavailable, R.string.requesting_unlock_token, R.string.show_action, R.string.unlock_token_msg1
+            R.string.license_service_unavailable, R.string.requesting_unlock_token, R.string.show_action, R.string.unlock_token_msg1,
+            R.string.qr_license_confirm, R.string.qr_purchase_required, R.string.license_limit_reached,
+            R.string.license_error, R.string.requesting_license
     };
 
     protected final Context mContext;
     protected SharedPreferences mPrefs;
 
     // this is initialized in MainActivity
-    private static final HashSet<String> mPeerSkus = new HashSet<>();
+    private static final ArraySet<String> mPeerSkus = new ArraySet<>();
 
     protected Billing(Context ctx) {
         mContext = ctx;
@@ -206,7 +208,7 @@ public class Billing {
             return false;
 
         if(CaptureService.isServiceActive())
-            return !CaptureService.isCapturingAsRoot();
+            return !CaptureService.isCapturingAsRoot() && !CaptureService.isReadingFromPcapFile();
         else
             return !Prefs.isRootCaptureEnabled(mPrefs);
     }
@@ -226,6 +228,6 @@ public class Billing {
     }
 
     public void clearPeerSkus() {
-        handlePeerSkus(new HashSet<>());
+        handlePeerSkus(new ArraySet<>());
     }
 }

@@ -2,6 +2,76 @@
 
 Releases available at https://github.com/emanuele-f/PCAPdroid/releases
 
+## [1.7.5] - 2024-11-09
+- Fix root capture stall when target apps are set
+
+## [1.7.4] - 2024-10-16
+- Fix root capture start in some non-magisk su binaries (credits: jackyzy823)
+- The mitm addon now uses mitmproxy 11
+- Include the package name in the CSV output (credits: Chris Vanstone)
+
+## [1.7.3] - 2024-09-07
+- Allow setting the app language from the system (for Android 13+)
+- Mitm addon v1.2: allow public files write, fix enabled addons reset, fix addons reload
+- You can now use a compatible mitm addon with the same major version
+- Detect always-on VPN enabled after capture start
+- Catch possible crash in getUserBadgedIcon in Android 8
+- Disable unfinished languages: fr, ja, ko, nb, pl, pt
+
+## [1.7.2] - 2024-04-20
+- Fix broken PCAP file loading feature
+- Minor enhancements
+
+## [1.7.1] - 2024-03-28
+- Add toggle for auto-reconnection on third-party VPN termination
+- Fix uninstalled apps not removed from app filter
+- Add IPv6 bytes stats (credits: myzhan)
+
+## [1.7.0] - 2024-02-10
+- Select multiple target apps
+- Copy/export the connections payload
+- Android 14 support
+- mitmproxy 10.1.6 and Doze fix
+- Ability to block QUIC only on decryption
+- Fix decryption status for QUIC connections
+- Fix inaccurate firewall grace period
+- Integrations to run with Tor and DNSCrypt
+- Use your own mitmproxy addons (experimental)
+- Remove mitm-addon permission
+- Show termux main app instead of its sub-apps
+- Use ISO 8601 dates in CSV export
+
+## [1.6.9] - 2023-12-04
+- Fix root capture start on some devices
+- Fix root permission incorrectly requested on read from pcap file
+- Fix capture control modal incorrectly shown
+- Fix possible crash on null CaptureSettings
+- Fix possible SecurityException while opening PCAP file
+
+## [1.6.8] - 2023-09-01
+- Fix root capture/pcap loading in playstore build due to AAB packaging
+- Fix possible permission denied error on PCAP file open
+
+## [1.6.7] - 2023-08-31
+- Fix root capture start failure due to short timeout
+- Fix NumberFormatException in PCAP open / CSV export
+- Add Ukrainian translation (credits: odkate)
+- Do not resolve socks5 server host if disabled
+
+## [1.6.6] - 2023-08-28
+- Add ability to open PCAP/PCAPNG files
+- Add Arabic translation (credits: Mustafa Hamed Kathem)
+- Fix app not blocked by firewall after reinstallation
+- Fix DNS from unknown app incorrectly blocked in firewall whitelist mode
+- Support IPv6 and host names in socks5 mode
+
+## [1.6.5] - 2023-06-15
+- Add ability to inject javascript into web pages (PCAPdroid-mitm)
+- TLS decryption is now rule-based, it only applies to specified connections
+- App icon on Android 13 can be themed now (credits: incycledream)
+- Allow exporting the SSLKEYLOG after anomalous app stop
+- IPv6 fixes: fix ICMPv6, fix crash on invalid DNS, capture of ULA traffic
+
 ## [1.6.4] - 2023-04-24
 - Fix QR code activation crash on Android 32+
 - Update translations

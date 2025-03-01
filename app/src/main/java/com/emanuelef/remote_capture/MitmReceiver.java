@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2022 - Emanuele Faranda
+ * Copyright 2022-24 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture;
@@ -95,6 +95,7 @@ public class MitmReceiver implements Runnable, ConnectionsListener, MitmListener
         DATA_TRUNCATED,
         MASTER_SECRET,
         LOG,
+        JS_INJECTED
     }
 
     private static class PendingMessage {
@@ -108,7 +109,7 @@ public class MitmReceiver implements Runnable, ConnectionsListener, MitmListener
             type = _type;
             msg = _msg;
             port = _port;
-            pendingSince = SystemClock.uptimeMillis();
+            pendingSince = SystemClock.elapsedRealtime();
             when = _now;
         }
     }
@@ -319,16 +320,18 @@ public class MitmReceiver implements Runnable, ConnectionsListener, MitmListener
             // see ConnectionDescriptor.processUpdate
             if(conn.status == ConnectionDescriptor.CONN_STATUS_CLOSED)
                 conn.status = ConnectionDescriptor.CONN_STATUS_CLIENT_ERROR;
-        } else if(type == MsgType.DATA_TRUNCATED)
+        } else if(type == MsgType.DATA_TRUNCATED) {
             conn.setPayloadTruncatedByAddon();
-        else
+        } else if(type == MsgType.JS_INJECTED) {
+            conn.js_injected_scripts = new String(message, StandardCharsets.US_ASCII);
+        } else
             conn.addPayloadChunkMitm(new PayloadChunk(message, getChunkType(type), isSent(type), tstamp));
     }
 
     private synchronized void addPendingMessage(PendingMessage pending) {
         // Purge unresolved connections (should not happen, just in case)
         if(mPendingMessages.size() > 32) {
-            long now = SystemClock.uptimeMillis();
+            long now = SystemClock.elapsedRealtime();
 
             for(int i = mPendingMessages.size()-1; i>=0; i--) {
                 ArrayList<PendingMessage> pp = mPendingMessages.valueAt(i);
@@ -380,6 +383,8 @@ public class MitmReceiver implements Runnable, ConnectionsListener, MitmListener
                 return MsgType.MASTER_SECRET;
             case "log":
                 return MsgType.LOG;
+            case "js_inject":
+                return MsgType.JS_INJECTED;
             default:
                 return MsgType.UNKNOWN;
         }
@@ -476,6 +481,11 @@ public class MitmReceiver implements Runnable, ConnectionsListener, MitmListener
         if(mSocketFd == null) {
             mAddon.disconnect();
             return;
+        }
+
+        if (MitmAddon.isDozeEnabled(mContext)) {
+            Utils.showToastLong(mContext, R.string.mitm_doze_notice);
+            mAddon.disableDoze();
         }
 
         if(mThread != null)
