@@ -14,28 +14,37 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 #define _GNU_SOURCE
 #include <string.h>
 #include "pcapdroid.h"
 #include "common/utils.h"
+#include "third_party/libchash.h"
 
 typedef struct {
-    char *key;
+    char country_code[3];
     UT_hash_handle hh;
-} string_entry_t;
+} country_entry_t;
 
 typedef struct {
     int key;
     UT_hash_handle hh;
 } int_entry_t;
 
+typedef struct {
+    int uid;
+    blacklist_t *allowlist;
+    UT_hash_handle hh;
+} app_allowlist_t;
+
 struct blacklist {
-    string_entry_t *domains;
+    struct HashTable *domains;
     int_entry_t *uids;
     ndpi_ptree_t *ptree;
+    country_entry_t* countries;
+    app_allowlist_t *app_allowlists;
     blacklists_stats_t stats;
 };
 
@@ -52,6 +61,13 @@ blacklist_t* blacklist_init() {
         return NULL;
     }
 
+    bl->domains = AllocateHashTable(0 /* keys are null terminated */, 1 /* copy keys */);
+    if (!bl->domains) {
+        ndpi_ptree_destroy(bl->ptree);
+        bl_free(bl);
+        return NULL;
+    }
+
     return bl;
 }
 
@@ -64,17 +80,10 @@ int blacklist_add_domain(blacklist_t *bl, const char *domain) {
     if(blacklist_match_domain(bl, domain))
         return -EADDRINUSE; // duplicate domain
 
-    string_entry_t *entry = bl_malloc(sizeof(string_entry_t));
-    if(!entry)
+    HTItem* entry = HashInsert(bl->domains, PTR_KEY(bl->domains, domain));
+    if (!entry)
         return -ENOMEM;
 
-    entry->key = bl_strdup(domain);
-    if(!entry->key) {
-        bl_free(entry);
-        return -ENOMEM;
-    }
-
-    HASH_ADD_KEYPTR(hh, bl->domains, entry->key, strlen(entry->key), entry);
     bl->stats.num_domains++;
     return 0;
 }
@@ -93,13 +102,34 @@ int blacklist_add_ip(blacklist_t *bl, const ndpi_ip_addr_t *addr, uint8_t bits) 
 /* ******************************************************* */
 
 int blacklist_add_ipstr(blacklist_t *bl, const char *ip) {
+    char buf[INET6_ADDRSTRLEN];
+    int bits = -1;
+
+    // check for CIDR
+    const char* slash = strchr(ip, '/');
+    if (slash) {
+        size_t to_copy = slash - ip;
+        if ((to_copy == 0) || (to_copy >= sizeof(buf)))
+            return -EINVAL;
+
+        memcpy(buf, ip, to_copy);
+        buf[to_copy] = '\0';
+        ip = buf;
+        bits = atoi(slash + 1);
+    }
+
     ndpi_ip_addr_t addr;
     int ipver = ndpi_parse_ip_string(ip, &addr);
 
     if((ipver != 4) && (ipver != 6))
         return -EINVAL;
 
-    int bits = (ipver == 4) ? 32 : 128;
+    if (bits < 0)
+        bits = (ipver == 4) ? 32 : 128;
+    else if (((ipver == 4) && (bits > 32)) ||
+             ((ipver == 6) && (bits > 128)))
+        return -EINVAL;
+
     return blacklist_add_ip(bl, &addr, bits);
 }
 
@@ -122,11 +152,30 @@ int blacklist_add_uid(blacklist_t *bl, int uid) {
 
 /* ******************************************************* */
 
+int blacklist_add_country(blacklist_t *bl, const char country_code[3]) {
+    if(blacklist_match_country(bl, country_code))
+        return -EADDRINUSE; // duplicate
+
+    country_entry_t *entry = bl_malloc(sizeof(country_entry_t));
+    if(!entry)
+        return -ENOMEM;
+
+    entry->country_code[0] = country_code[0];
+    entry->country_code[1] = country_code[1];
+    entry->country_code[2] = '\0';
+    HASH_ADD_KEYPTR(hh, bl->countries, entry->country_code, 2, entry);
+
+    bl->stats.num_countries++;
+    return 0;
+}
+
+/* ******************************************************* */
+
 int blacklist_load_file(blacklist_t *bl, const char *path, blacklist_type btype, blacklist_stats_t *bstats) {
     FILE *f;
     char buffer[256];
     int num_ok = 0, num_fail = 0, num_dup = 0;
-    int max_file_rules = 500000;
+    int max_file_rules = 15000000;
 
     f = fopen(path, "r");
     if(!f) {
@@ -163,13 +212,21 @@ int blacklist_load_file(blacklist_t *bl, const char *path, blacklist_type btype,
                 continue;
             }
 
-            int bits;
-            if(slash)
-                bits = atoi(slash + 1); // subnet
-            else if(ipver == 4)
-                bits = 32;
-            else
-                bits = 128;
+            int max_bits = (ipver == 4) ? 32 : 128;
+            int bits = max_bits;
+
+            if(slash) { // subnet
+                char *endp;
+                long val = strtol(slash + 1, &endp, 10);
+
+                if((endp == (slash + 1)) || (*endp != '\0') || (val < 0) || (val > max_bits)) {
+                    log_w("Invalid subnet \"%s/%s\" in blacklist %s", buffer, slash + 1, path);
+                    num_fail++;
+                    continue;
+                }
+
+                bits = (int) val;
+            }
 
             // Validate IPv4
             if(((ipver == 4) && (bits == 32)) &&
@@ -185,7 +242,7 @@ int blacklist_load_file(blacklist_t *bl, const char *path, blacklist_type btype,
                 num_dup++;
             else
                 num_fail++;
-        } else { // DOMAIN_BLACKLIST
+        } else if (btype == DOMAIN_BLACKLIST) {
             if(is_ip_addr) {
                 log_w("IP/net \"%s\" found instead of domain in %s", buffer, path);
                 num_fail++;
@@ -199,6 +256,9 @@ int blacklist_load_file(blacklist_t *bl, const char *path, blacklist_type btype,
                 num_dup++;
             else
                 num_fail++;
+        } else {
+            log_e("Loading unsupported blacklist of type %d", btype);
+            break;
         }
     }
 
@@ -221,17 +281,25 @@ int blacklist_load_file(blacklist_t *bl, const char *path, blacklist_type btype,
 /* ******************************************************* */
 
 void blacklist_destroy(blacklist_t *bl) {
-    string_entry_t *entry, *tmp;
-    HASH_ITER(hh, bl->domains, entry, tmp) {
-        HASH_DELETE(hh, bl->domains, entry);
-        bl_free(entry->key);
-        bl_free(entry);
-    }
+    FreeHashTable(bl->domains);
 
     int_entry_t *entry_i, *tmp_i;
     HASH_ITER(hh, bl->uids, entry_i, tmp_i) {
         HASH_DELETE(hh, bl->uids, entry_i);
         bl_free(entry_i);
+    }
+
+    country_entry_t *entry_c, *tmp_c;
+    HASH_ITER(hh, bl->countries, entry_c, tmp_c) {
+        HASH_DELETE(hh, bl->countries, entry_c);
+        bl_free(entry_c);
+    }
+
+    app_allowlist_t *entry_a, *tmp_a;
+    HASH_ITER(hh, bl->app_allowlists, entry_a, tmp_a) {
+        HASH_DELETE(hh, bl->app_allowlists, entry_a);
+        blacklist_destroy(entry_a->allowlist);
+        bl_free(entry_a);
     }
 
     ndpi_ptree_destroy(bl->ptree);
@@ -267,6 +335,18 @@ bool blacklist_match_ipstr(blacklist_t *bl, const char *ip_str) {
 
 /* ******************************************************* */
 
+bool blacklist_match_country(blacklist_t *bl, const char country_code[3]) {
+    if (!country_code || (country_code[0] == '\0'))
+        return false;
+
+    country_entry_t *entry = NULL;
+
+    HASH_FIND_STR(bl->countries, country_code, entry);
+    return (entry != NULL);
+}
+
+/* ******************************************************* */
+
 static char* get_second_level_domain(const char *domain) {
     char *dot = (char*) memrchr(domain, '.', strlen(domain));
     if(!dot || (dot == domain))
@@ -283,20 +363,21 @@ static char* get_second_level_domain(const char *domain) {
 
 bool blacklist_match_domain(blacklist_t *bl, const char *domain) {
     // Keep in sync with MatchList.matchesHost
-    string_entry_t *entry = NULL;
+    HashTable* ht = bl->domains;
+    HTItem *entry = NULL;
 
     if(strncmp(domain, "www.", 4) == 0)
         domain += 4;
 
     // exact domain match
-    HASH_FIND_STR(bl->domains, domain, entry);
+    entry = HashFind(ht, PTR_KEY(ht, domain));
     if(entry != NULL)
         return true;
 
     // 2nd-level domain match
     char *domain2 = get_second_level_domain(domain);
     if(domain2 != domain) {
-        HASH_FIND_STR(bl->domains, domain2, entry);
+        entry = HashFind(ht, PTR_KEY(ht, domain2));
         if(entry != NULL)
             return true;
     }
@@ -317,6 +398,37 @@ bool blacklist_match_uid(blacklist_t *bl, int uid) {
 
 void blacklist_get_stats(const blacklist_t *bl, blacklists_stats_t *stats) {
     *stats = bl->stats;
+}
+
+/* ******************************************************* */
+
+int blacklist_set_app_allowlist(blacklist_t *bl, int uid, blacklist_t *allowlist) {
+    app_allowlist_t *entry;
+
+    HASH_FIND_INT(bl->app_allowlists, &uid, entry);
+    if(entry != NULL) {
+        blacklist_destroy(entry->allowlist);
+        entry->allowlist = allowlist;
+        return 0;
+    }
+
+    entry = bl_malloc(sizeof(app_allowlist_t));
+    if(!entry)
+        return -ENOMEM;
+
+    entry->uid = uid;
+    entry->allowlist = allowlist;
+    HASH_ADD_INT(bl->app_allowlists, uid, entry);
+    return 0;
+}
+
+/* ******************************************************* */
+
+blacklist_t* blacklist_get_app_allowlist(const blacklist_t *bl, int uid) {
+    app_allowlist_t *entry;
+
+    HASH_FIND_INT(bl->app_allowlists, &uid, entry);
+    return (entry != NULL) ? entry->allowlist : NULL;
 }
 
 /* ******************************************************* */
@@ -343,19 +455,65 @@ static int bl_load_list_of_type(blacklist_t *bl, JNIEnv *env, jobject list, blac
                 case UID_BLACKLIST:
                     rv = blacklist_add_uid(bl, atoi(val));
                     break;
+                case COUNTRY_BLACKLIST:
+                    rv = blacklist_add_country(bl, val);
+                    break;
                 default:
                     rv = -1;
             }
+
+            if((rv != 0) && (rv != -EADDRINUSE))
+                log_e("bl add %s failed: %d", val, rv);
+
             (*env)->ReleaseStringUTFChars(env, obj, val);
             (*env)->DeleteLocalRef(env, obj);
 
-            if(rv == 0) {
+            if(rv == 0)
                 num_loaded++;
-            } else if(rv != -EADDRINUSE) {
-                log_e("bl add %s failed: %d", val, rv);
+            else if(rv != -EADDRINUSE)
                 return -1;
-            }
         }
+    }
+
+    return num_loaded;
+}
+
+/* ******************************************************* */
+
+// Each allowlist is loaded as a nested blacklist_t
+static int bl_load_app_allowlists(blacklist_t *bl, JNIEnv *env, jobject descriptors) {
+    int num_items = (*env)->CallIntMethod(env, descriptors, mids.listSize);
+    int num_loaded = 0;
+
+    for(int i=0; i<num_items; i++) {
+        jobject descr = (*env)->CallObjectMethod(env, descriptors, mids.listGet, i);
+        if(descr == NULL)
+            continue;
+
+        int uid = (*env)->GetIntField(env, descr, fields.ld_uid);
+
+        blacklist_t *allowlist = blacklist_init();
+        if(!allowlist) {
+            log_e("blacklist_init failed for app allowlist (uid %d)", uid);
+            (*env)->DeleteLocalRef(env, descr);
+            return -1;
+        }
+
+        if(blacklist_load_list_descriptor(allowlist, env, descr) < 0) {
+            blacklist_destroy(allowlist);
+            (*env)->DeleteLocalRef(env, descr);
+            return -1;
+        }
+
+        if(blacklist_set_app_allowlist(bl, uid, allowlist) < 0) {
+            log_e("blacklist_set_app_allowlist failed for uid %d", uid);
+            blacklist_destroy(allowlist);
+            (*env)->DeleteLocalRef(env, descr);
+            return -1;
+        }
+        num_loaded++;
+
+        (*env)->DeleteLocalRef(env, descr);
     }
 
     return num_loaded;
@@ -367,18 +525,25 @@ int blacklist_load_list_descriptor(blacklist_t *bl, JNIEnv *env, jobject ld) {
     jobject apps = (*env)->GetObjectField(env, ld, fields.ld_apps);
     jobject hosts = (*env)->GetObjectField(env, ld, fields.ld_hosts);
     jobject ips = (*env)->GetObjectField(env, ld, fields.ld_ips);
+    jobject countries = (*env)->GetObjectField(env, ld, fields.ld_countries);
+    jobject allowlists = (*env)->GetObjectField(env, ld, fields.ld_allowlists);
 
     int num_apps = bl_load_list_of_type(bl, env, apps, UID_BLACKLIST);
     int num_domains = bl_load_list_of_type(bl, env, hosts, DOMAIN_BLACKLIST);
     int num_ips = bl_load_list_of_type(bl, env, ips, IP_BLACKLIST);
+    int num_countries = bl_load_list_of_type(bl, env, countries, COUNTRY_BLACKLIST);
+    int num_allowlists = bl_load_app_allowlists(bl, env, allowlists);
+    int rv = 0;
 
-    if((num_apps == -1) || (num_ips == -1) || (num_domains == -1))
-        return -1;
+    if((num_apps == -1) || (num_ips == -1) || (num_domains == -1) || (num_countries == -1) || (num_allowlists == -1))
+        rv = -1;
 
     (*env)->DeleteLocalRef(env, apps);
     (*env)->DeleteLocalRef(env, hosts);
     (*env)->DeleteLocalRef(env, ips);
-    return 0;
+    (*env)->DeleteLocalRef(env, countries);
+    (*env)->DeleteLocalRef(env, allowlists);
+    return rv;
 }
 
 #endif // ANDROID

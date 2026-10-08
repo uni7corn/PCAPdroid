@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 #include <inttypes.h>
@@ -27,8 +27,8 @@
 #include "ndpi_protocol_ids.h"
 
 extern int run_vpn(pcapdroid_t *pd);
-extern int run_root(pcapdroid_t *pd);
-extern void root_iter_connections(pcapdroid_t *pd, conn_cb cb);
+extern int run_pcap(pcapdroid_t *pd);
+extern void pcap_iter_connections(pcapdroid_t *pd, conn_cb cb);
 extern void vpn_process_ndpi(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data);
 
 /* ******************************************************* */
@@ -36,6 +36,7 @@ extern void vpn_process_ndpi(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_co
 bool running = false;
 uint32_t new_dns_server = 0;
 bool block_private_dns = false;
+bool has_seen_dump_extensions = false;
 
 bool dump_capture_stats_now = false;
 bool reload_blacklists_now = false;
@@ -46,15 +47,209 @@ char *pd_appver = (char*) "";
 char *pd_device = (char*) "";
 char *pd_os = (char*) "";
 
-static ndpi_protocol_bitmask_struct_t masterProtos;
-static bool masterProtosInit = false;
-
 /* ******************************************************* */
 
 /* NOTE: these must be reset during each run, as android may reuse the service */
 static int netd_resolve_waiting;
 static u_int64_t last_connections_dump;
 static u_int64_t next_connections_dump;
+
+/* ******************************************************* */
+
+static blacklist_t *known_dns_servers = NULL;
+static pthread_mutex_t known_dns_servers_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* ******************************************************* */
+
+static blacklist_t* load_dns_servers(void) {
+    // IP addresses (both legacy and private DNS) and domains (only private DNS). These are used to count DNS queries and
+    // redirect DNS queries to the public DNS server (see check_dns_req_allowed)
+    // https://help.firewalla.com/hc/en-us/articles/360060661873-Dealing-DNS-over-HTTPS-and-DNS-over-TLS-on-your-network
+    // https://adguard-dns.io/kb/general/dns-providers/
+    blacklist_t *bl = blacklist_init();
+    if(!bl) {
+        log_e("blacklist_init failed for the known DNS servers");
+        return NULL;
+    }
+
+    // Google
+    blacklist_add_ipstr(bl, "8.8.8.8");
+    blacklist_add_ipstr(bl, "8.8.4.4");
+    blacklist_add_ipstr(bl, "2001:4860:4860::8888");
+    blacklist_add_ipstr(bl, "2001:4860:4860::8844");
+    blacklist_add_ipstr(bl, "2001:4860:4860::6464"); // DNS64
+    blacklist_add_ipstr(bl, "2001:4860:4860::64");   // DNS64
+    blacklist_add_domain(bl, "dns.google");
+    // Cloudflare
+    blacklist_add_ipstr(bl, "1.1.1.1");
+    blacklist_add_ipstr(bl, "1.0.0.1");
+    blacklist_add_ipstr(bl, "1.1.1.2");
+    blacklist_add_ipstr(bl, "1.0.0.2");
+    blacklist_add_ipstr(bl, "1.1.1.3");
+    blacklist_add_ipstr(bl, "1.0.0.3");
+    blacklist_add_ipstr(bl, "2606:4700:4700::1111");
+    blacklist_add_ipstr(bl, "2606:4700:4700::1001");
+    blacklist_add_ipstr(bl, "2606:4700:4700::1112");
+    blacklist_add_ipstr(bl, "2606:4700:4700::1002");
+    blacklist_add_ipstr(bl, "2606:4700:4700::1113");
+    blacklist_add_ipstr(bl, "2606:4700:4700::1003");
+    blacklist_add_ipstr(bl, "2606:4700:4700::64");   // DNS64
+    blacklist_add_ipstr(bl, "2606:4700:4700::6400"); // DNS64
+    blacklist_add_domain(bl, "one.one.one.one");
+    blacklist_add_domain(bl, "dns.cloudflare.com");
+    blacklist_add_domain(bl, "chrome.cloudflare-dns.com");
+    blacklist_add_domain(bl, "mozilla.cloudflare-dns.com");
+    blacklist_add_domain(bl, "security.cloudflare-dns.com");
+    blacklist_add_domain(bl, "family.cloudflare-dns.com");
+    // Quad9
+    blacklist_add_ipstr(bl, "9.9.9.9");
+    blacklist_add_ipstr(bl, "149.112.112.112");
+    blacklist_add_ipstr(bl, "9.9.9.10");
+    blacklist_add_ipstr(bl, "149.112.112.10");
+    blacklist_add_ipstr(bl, "9.9.9.11");
+    blacklist_add_ipstr(bl, "149.112.112.11");
+    blacklist_add_ipstr(bl, "2620:fe::fe");
+    blacklist_add_ipstr(bl, "2620:fe::9");
+    blacklist_add_ipstr(bl, "2620:fe::10");
+    blacklist_add_ipstr(bl, "2620:fe::fe:10");
+    blacklist_add_ipstr(bl, "2620:fe::11");
+    blacklist_add_ipstr(bl, "2620:fe::fe:11");
+    blacklist_add_domain(bl, "dns.quad9.net");
+    blacklist_add_domain(bl, "dns10.quad9.net");
+    blacklist_add_domain(bl, "dns11.quad9.net");
+    // CleanBrowsing
+    blacklist_add_ipstr(bl, "185.228.168.168");
+    blacklist_add_ipstr(bl, "185.228.169.168");
+    blacklist_add_ipstr(bl, "185.228.168.10");
+    blacklist_add_ipstr(bl, "185.228.169.11");
+    blacklist_add_ipstr(bl, "185.228.168.9");
+    blacklist_add_ipstr(bl, "185.228.169.9");
+    blacklist_add_ipstr(bl, "2a0d:2a00:1::");
+    blacklist_add_ipstr(bl, "2a0d:2a00:2::");
+    blacklist_add_ipstr(bl, "2a0d:2a00:1::1");
+    blacklist_add_ipstr(bl, "2a0d:2a00:2::1");
+    blacklist_add_ipstr(bl, "2a0d:2a00:1::2");
+    blacklist_add_ipstr(bl, "2a0d:2a00:2::2");
+    blacklist_add_domain(bl, "doh.cleanbrowsing.org");
+    blacklist_add_domain(bl, "family-filter-dns.cleanbrowsing.org");
+    blacklist_add_domain(bl, "adult-filter-dns.cleanbrowsing.org");
+    blacklist_add_domain(bl, "security-filter-dns.cleanbrowsing.org");
+    // NextDNS
+    blacklist_add_domain(bl, "dns.nextdns.io");
+    blacklist_add_domain(bl, "anycast.dns.nextdns.io");
+    blacklist_add_domain(bl, "chromium.dns.nextdns.io");
+    blacklist_add_domain(bl, "firefox.dns.nextdns.io");
+    // OpenDNS
+    blacklist_add_ipstr(bl, "208.67.222.222");
+    blacklist_add_ipstr(bl, "208.67.220.220");
+    blacklist_add_ipstr(bl, "208.67.222.123");
+    blacklist_add_ipstr(bl, "208.67.220.123");
+    blacklist_add_ipstr(bl, "208.67.222.2");
+    blacklist_add_ipstr(bl, "208.67.220.2");
+    blacklist_add_ipstr(bl, "2620:119:35::35");
+    blacklist_add_ipstr(bl, "2620:119:53::53");
+    blacklist_add_domain(bl, "doh.opendns.com");
+    blacklist_add_domain(bl, "dns.opendns.com");
+    blacklist_add_domain(bl, "doh.familyshield.opendns.com");
+    blacklist_add_domain(bl, "familyshield.opendns.com");
+    blacklist_add_domain(bl, "doh.sandbox.opendns.com");
+    blacklist_add_domain(bl, "sandbox.opendns.com");
+    // Adguard
+    blacklist_add_ipstr(bl, "94.140.14.14");
+    blacklist_add_ipstr(bl, "94.140.15.15");
+    blacklist_add_ipstr(bl, "94.140.14.15");
+    blacklist_add_ipstr(bl, "94.140.15.16");
+    blacklist_add_ipstr(bl, "94.140.14.140");
+    blacklist_add_ipstr(bl, "94.140.14.141");
+    blacklist_add_ipstr(bl, "2a10:50c0::ad1:ff");
+    blacklist_add_ipstr(bl, "2a10:50c0::ad2:ff");
+    blacklist_add_ipstr(bl, "2a10:50c0::bad1:ff");
+    blacklist_add_ipstr(bl, "2a10:50c0::bad2:ff");
+    blacklist_add_ipstr(bl, "2a10:50c0::1:ff");
+    blacklist_add_ipstr(bl, "2a10:50c0::2:ff");
+    blacklist_add_domain(bl, "dns.adguard.com");
+    blacklist_add_domain(bl, "dns.adguard-dns.com");
+    blacklist_add_domain(bl, "family.adguard-dns.com");
+    blacklist_add_domain(bl, "unfiltered.adguard-dns.com");
+    // LibreDNS
+    blacklist_add_ipstr(bl, "88.198.92.222");
+    blacklist_add_ipstr(bl, "116.202.176.26");
+    blacklist_add_ipstr(bl, "2a01:4f8:1c0c:8274::1");
+    blacklist_add_domain(bl, "dot.libredns.gr");
+    blacklist_add_domain(bl, "doh.libredns.gr");
+    // DNSLify
+    blacklist_add_domain(bl, "dns.dnslify.com");
+    // Quadrant Security
+    blacklist_add_domain(bl, "dns-tls.qis.io");
+    blacklist_add_domain(bl, "doh.qis.io");
+    // Mullvad
+    blacklist_add_domain(bl, "dns.mullvad.net");
+    blacklist_add_domain(bl, "adblock.dns.mullvad.net");
+    blacklist_add_domain(bl, "base.dns.mullvad.net");
+    blacklist_add_domain(bl, "extended.dns.mullvad.net");
+    blacklist_add_domain(bl, "family.dns.mullvad.net");
+    blacklist_add_domain(bl, "all.dns.mullvad.net");
+    // ControlD
+    blacklist_add_ipstr(bl, "76.76.2.0");
+    blacklist_add_ipstr(bl, "76.76.10.0");
+    blacklist_add_ipstr(bl, "76.76.2.1");
+    blacklist_add_ipstr(bl, "76.76.2.2");
+    blacklist_add_ipstr(bl, "76.76.2.3");
+    blacklist_add_ipstr(bl, "2606:1a40::");
+    blacklist_add_ipstr(bl, "2606:1a40:1::");
+    blacklist_add_domain(bl, "freedns.controld.com");
+    blacklist_add_domain(bl, "p0.freedns.controld.com");
+    blacklist_add_domain(bl, "p1.freedns.controld.com");
+    blacklist_add_domain(bl, "p2.freedns.controld.com");
+    blacklist_add_domain(bl, "p3.freedns.controld.com");
+
+    return bl;
+}
+
+/* ******************************************************* */
+
+static blacklist_t* get_known_dns_servers(void) {
+    pthread_mutex_lock(&known_dns_servers_lock);
+
+    if(!known_dns_servers)
+        known_dns_servers = load_dns_servers();
+
+    blacklist_t *bl = known_dns_servers;
+    pthread_mutex_unlock(&known_dns_servers_lock);
+
+    return bl;
+}
+
+/* ******************************************************* */
+
+bool is_known_dns_ip(const zdtun_ip_t *ip, int ipver) {
+    blacklist_t *bl = get_known_dns_servers();
+    if(!bl)
+        return false;
+
+    return blacklist_match_ip(bl, ip, ipver);
+}
+
+/* ******************************************************* */
+
+// NOTE: domain matching updates the hash table internal state, so it's not thread safe
+bool is_known_dns_domain(const char *domain) {
+    blacklist_t *bl = get_known_dns_servers();
+    if(!bl)
+        return false;
+
+    return blacklist_match_domain(bl, domain);
+}
+
+/* ******************************************************* */
+
+bool is_known_dns_ipstr(const char *ip) {
+    blacklist_t *bl = get_known_dns_servers();
+    if(!bl)
+        return false;
+
+    return blacklist_match_ipstr(bl, ip);
+}
 
 /* ******************************************************* */
 
@@ -67,23 +262,19 @@ static void conn_free_ndpi(pd_conn_t *data) {
 
 /* ******************************************************* */
 
-uint16_t pd_ndpi2proto(ndpi_protocol proto) {
+uint16_t pd_ndpi2proto(const struct ndpi_bitmask *masterProtos, ndpi_protocol nproto) {
     // The nDPI master/app protocol logic is not clear (e.g. the first packet of a DNS flow has
     // master_protocol unknown whereas the second has master_protocol set to DNS). We are not interested
     // in the app protocols, so just take the one that's not unknown.
-    uint16_t l7proto = ((proto.master_protocol != NDPI_PROTOCOL_UNKNOWN) ? proto.master_protocol : proto.app_protocol);
+    uint16_t l7proto = ((nproto.proto.master_protocol != NDPI_PROTOCOL_UNKNOWN) ?
+            nproto.proto.master_protocol : nproto.proto.app_protocol);
 
     if((l7proto == NDPI_PROTOCOL_HTTP_CONNECT) || (l7proto == NDPI_PROTOCOL_HTTP_PROXY))
         l7proto = NDPI_PROTOCOL_HTTP;
 
-    if(!masterProtosInit) {
-        init_ndpi_protocols_bitmask(&masterProtos);
-        masterProtosInit = true;
-    }
-
     // nDPI will still return a disabled protocol (via the bitmask) if it matches some
     // metadata for it (e.g. the SNI)
-    if(!NDPI_ISSET(&masterProtos, l7proto))
+    if(!ndpi_bitmask_is_set(masterProtos, l7proto))
         l7proto = NDPI_PROTOCOL_UNKNOWN;
 
     //log_d("PROTO: %d/%d -> %d", proto.master_protocol, proto.app_protocol, l7proto);
@@ -95,10 +286,11 @@ uint16_t pd_ndpi2proto(ndpi_protocol proto) {
 
 static bool is_encrypted_l7(struct ndpi_detection_module_struct *ndpi_str, uint16_t l7proto) {
     // The ndpi_is_encrypted_proto API does not work reliably as it mixes master protocols with apps
-    if(l7proto >= (NDPI_MAX_SUPPORTED_PROTOCOLS + NDPI_MAX_NUM_CUSTOM_PROTOCOLS))
+    if(l7proto >= ndpi_get_num_protocols(ndpi_str))
         return false;
 
-    return(ndpi_str->proto_defaults[l7proto].isClearTextProto == 0);
+    ndpi_proto_defaults_t *proto_defaults = ndpi_get_proto_defaults(ndpi_str);
+    return (proto_defaults && (proto_defaults[l7proto].isClearTextProto == 0));
 }
 
 /* ******************************************************* */
@@ -135,13 +327,16 @@ static int notif_connection(pcapdroid_t *pd, conn_array_t *arr, const zdtun_5tup
 
     if(arr->cur_items >= arr->size) {
         /* Extend array */
-        arr->size = (arr->size == 0) ? 8 : (arr->size * 2);
-        arr->items = pd_realloc(arr->items, arr->size * sizeof(conn_and_tuple_t));
+        int new_size = (arr->size == 0) ? 8 : (arr->size * 2);
+        conn_and_tuple_t *new_items = pd_realloc(arr->items, new_size * sizeof(conn_and_tuple_t));
 
-        if(arr->items == NULL) {
-            log_e("realloc(conn_array_t) (%d items) failed", arr->size);
+        if(new_items == NULL) {
+            log_e("realloc(conn_array_t) (%d items) failed", new_size);
             return -1;
         }
+
+        arr->items = new_items;
+        arr->size = new_size;
     }
 
     conn_and_tuple_t *slot = &arr->items[arr->cur_items++];
@@ -222,34 +417,31 @@ struct ndpi_detection_module_struct* init_ndpi() {
       return ndpi_cache;
 #endif
 
-    struct ndpi_detection_module_struct *ndpi = ndpi_init_detection_module(ndpi_no_prefs);
-    NDPI_PROTOCOL_BITMASK protocols;
+    struct ndpi_detection_module_struct *ndpi = ndpi_init_detection_module(NULL);
 
-    if(!ndpi)
+    if(!ndpi) {
+        log_e("ndpi_init_detection_module returned NULL");
         return(NULL);
-
-    // needed by pd_get_proto_name
-    if(!masterProtosInit) {
-        init_ndpi_protocols_bitmask(&masterProtos);
-        masterProtosInit = true;
     }
 
-#ifndef FUZZING
-    // enable all the protocols
-    NDPI_BITMASK_SET_ALL(protocols);
-#else
+    // nDPI 5.0: all protocols are enabled by default, no need to set a bitmask
+
+#ifdef FUZZING
     // nDPI has a big performance impact on fuzzing.
     // Only enable some protocols to extract the metadata for use in
     // PCAPdroid, we are not fuzzing nDPI!
-    NDPI_BITMASK_RESET(protocols);
-    NDPI_BITMASK_ADD(protocols, NDPI_PROTOCOL_DNS);
-    NDPI_BITMASK_ADD(protocols, NDPI_PROTOCOL_HTTP);
-    //NDPI_BITMASK_ADD(protocols, NDPI_PROTOCOL_TLS);
+    ndpi_set_config(ndpi, "all", "enable", "0");
+    ndpi_set_config(ndpi, "DNS", "enable", "1");
+    ndpi_set_config(ndpi, "HTTP", "enable", "1");
+    //ndpi_set_config(ndpi, "TLS", "enable", "1");
 #endif
 
-    ndpi_set_protocol_detection_bitmask2(ndpi, &protocols);
-
-    ndpi_finalize_initialization(ndpi);
+    int rc = ndpi_finalize_initialization(ndpi);
+    if(rc != 0) {
+        log_e("ndpi_finalize_initialization failed: %d", rc);
+        ndpi_exit_detection_module(ndpi);
+        return(NULL);
+    }
 
 #ifdef FUZZING
     ndpi_cache = ndpi;
@@ -285,7 +477,29 @@ const char* pd_get_proto_name(pcapdroid_t *pd, uint16_t proto, uint16_t alpn, in
 
 /* ******************************************************* */
 
-static void check_blacklisted_domain(pcapdroid_t *pd, pd_conn_t *data, const zdtun_5tuple_t *tuple) {
+// Check the per-app allowlist of the firewall blocklist for this connection's app.
+// A domain match requires data->info to be known before the connection's first packet: either from
+// a prior DNS reply (host LRU, at connection creation) or, for a DNS request, from the query name
+// DPI parses on the first packet. The TLS SNI cannot exempt a blocked TLS flow, as the connection
+// is dropped on its first packet (the SYN) and the ClientHello carrying the SNI is never sent; such
+// flows can only be allowed via the host resolved from a prior DNS reply
+static bool firewall_app_allowlisted(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+    if(!pd->firewall.enabled || !pd->firewall.bl)
+        return false;
+
+    blacklist_t *allowlist = blacklist_get_app_allowlist(pd->firewall.bl, data->uid);
+    if(allowlist == NULL)
+        return false;
+
+    const zdtun_ip_t dst_ip = tuple->dst_ip;
+
+    return blacklist_match_ip(allowlist, &dst_ip, tuple->ipver) ||
+           (data->info && data->info[0] && blacklist_match_domain(allowlist, data->info));
+}
+
+/* ******************************************************* */
+
+static void check_domain_block_rules(pcapdroid_t *pd, pd_conn_t *data, const zdtun_5tuple_t *tuple) {
     if(data->info && data->info[0]) {
         if(pd->malware_detection.bl && !data->blacklisted_domain && !data->whitelisted_app) {
             bool blacklisted = blacklist_match_domain(pd->malware_detection.bl, data->info);
@@ -307,16 +521,48 @@ static void check_blacklisted_domain(pcapdroid_t *pd, pd_conn_t *data, const zdt
             }
         }
 
-        if(pd->firewall.enabled && pd->firewall.bl && !data->to_block) {
-            // Check if the domain is explicitly blocked by the firewall
-            data->to_block |= blacklist_match_domain(pd->firewall.bl, data->info);
-            if(data->to_block) {
-                char appbuf[64];
-                char buf[512];
+        if(pd->firewall.enabled && pd->firewall.bl && (!data->to_block || data->fw_app_block)) {
+            char appbuf[64];
+            char buf[512];
 
+            if(blacklist_match_domain(pd->firewall.bl, data->info)) {
+                data->to_block = true;
+                data->fw_app_block = false;
                 get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
                 log_d("Blocked domain [%s]: %s [%s]", data->info, zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
+            } else if(data->fw_app_block) {
+                blacklist_t *allowlist = blacklist_get_app_allowlist(pd->firewall.bl, data->uid);
+
+                if((allowlist != NULL) && blacklist_match_domain(allowlist, data->info)) {
+                    data->to_block = (data->blacklisted_internal || data->blacklisted_ip || data->blacklisted_domain);
+                    data->fw_app_block = false;
+                    get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
+                    log_d("App allowlist exempted (domain) [%s]: %s [%s]", data->info,
+                          zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
+                }
             }
+        }
+    }
+}
+
+/* ******************************************************* */
+
+static void check_whitelist_mode_block(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+    // whitelist mode: block any app unless it's explicitly whitelisted.
+    // The blocklist still has priority to determine if a connection should be blocked.
+
+    // NOTE: data->l7proto is not computed yet
+    bool is_dns = (tuple->ipproto == IPPROTO_UDP) && (ntohs(tuple->dst_port) == 53);
+
+    if(pd->firewall.enabled && pd->firewall.wl_enabled && pd->firewall.wl && !data->to_block &&
+            // always allow DNS traffic from unspecified apps
+            (!is_dns || ((data->uid != UID_NETD) && (data->uid != UID_PHONE) && (data->uid != UID_UNKNOWN))))
+    {
+        // The per-app allowlist is consulted before the whitelist
+        if(!firewall_app_allowlisted(pd, tuple, data)) {
+            data->to_block = !blacklist_match_uid(pd->firewall.wl, data->uid);
+            if(data->to_block)
+                data->fw_app_block = true;
         }
     }
 }
@@ -359,18 +605,22 @@ pd_conn_t* pd_new_connection(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, int u
         }
     }
 
-    // Try to resolve host name via the LRU cache
+    // Query country info
     const zdtun_ip_t dst_ip = tuple->dst_ip;
+    char remote_ip[INET6_ADDRSTRLEN];
+    int family = (tuple->ipver == 4) ? AF_INET : AF_INET6;
+
+    remote_ip[0] = '\0';
+    inet_ntop(family, &dst_ip, remote_ip, sizeof(remote_ip));
+
+    if(pd->cb.get_country_code)
+        pd->cb.get_country_code(pd, remote_ip, data->country_code);
+
+    // Try to resolve host name via the LRU cache
     data->info = ip_lru_find(pd->ip_to_host, &dst_ip);
 
     if(data->info) {
-        char resip[INET6_ADDRSTRLEN];
-        int family = (tuple->ipver == 4) ? AF_INET : AF_INET6;
-
-        resip[0] = '\0';
-        inet_ntop(family, &dst_ip, resip, sizeof(resip));
-
-        log_d("Host LRU cache HIT: %s -> %s", resip, data->info);
+        log_d("Host LRU cache HIT: %s -> %s", remote_ip, data->info);
         data->info_from_lru = true;
 
         if(data->uid != UID_UNKNOWN) {
@@ -387,10 +637,15 @@ pd_conn_t* pd_new_connection(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, int u
 
                     conn->data->uid = data->uid;
 
-                    if(!conn->data->to_block && pd->firewall.enabled && pd->firewall.bl && (
-                            blacklist_match_uid(pd->firewall.bl, conn->data->uid) ||
-                            (pd->firewall.wl_enabled && pd->firewall.wl && !blacklist_match_uid(pd->firewall.wl, conn->data->uid))))
-                        conn->data->netd_block_missed = true;
+                    if(!conn->data->to_block && pd->firewall.enabled && pd->firewall.bl) {
+                        blacklist_t *allowlist = blacklist_get_app_allowlist(pd->firewall.bl, conn->data->uid);
+                        bool host_allowed = (allowlist != NULL) && blacklist_match_domain(allowlist, conn->data->info);
+
+                        if(!host_allowed && (
+                                blacklist_match_uid(pd->firewall.bl, conn->data->uid) ||
+                                (pd->firewall.wl_enabled && pd->firewall.wl && !blacklist_match_uid(pd->firewall.wl, conn->data->uid))))
+                            conn->data->netd_block_missed = true;
+                    }
 
                     zdtun_5tuple2str(&conn->tuple, buf, sizeof(buf));
                     log_d("Resolved netd uid: %s : %d", buf, data->uid);
@@ -406,7 +661,7 @@ pd_conn_t* pd_new_connection(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, int u
             }
         }
 
-        check_blacklisted_domain(pd, data, tuple);
+        check_domain_block_rules(pd, data, tuple);
     }
 
     if(pd->malware_detection.bl) {
@@ -432,32 +687,41 @@ pd_conn_t* pd_new_connection(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, int u
     }
 
     if(pd->firewall.enabled && pd->firewall.bl && !data->to_block) {
+        char appbuf[64];
+        char buf[256];
+
         data->to_block |= blacklist_match_ip(pd->firewall.bl, &dst_ip, tuple->ipver);
         if(data->to_block) {
-            char appbuf[64];
-            char buf[256];
-
             get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
             log_d("Blocked ip: %s [%s]", zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
-        } else {
-            data->to_block |= blacklist_match_uid(pd->firewall.bl, data->uid);
-            if(data->to_block) {
-                char appbuf[64];
-                char buf[256];
+        }
 
+        // Global IP/domain/country block rules keep precedence over the per-app allowlist
+        if(!data->to_block) {
+            data->to_block = blacklist_match_country(pd->firewall.bl, data->country_code);
+            if(data->to_block) {
+                get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
+                log_d("Blocked country \"%s\": %s [%s]", data->country_code,
+                      zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
+            }
+        }
+
+        if(!data->to_block && blacklist_match_uid(pd->firewall.bl, data->uid)) {
+            if(!firewall_app_allowlisted(pd, tuple, data)) {
+                data->to_block = true;
+                data->fw_app_block = true;
                 get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
                 log_d("Blocked app: %s [%s]", zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
+            } else {
+                get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
+                log_d("App allowlist exempted: %s [%s]", zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
             }
         }
 
         fw_num_checked_connections++;
     }
 
-    if(pd->firewall.enabled && pd->firewall.wl_enabled && pd->firewall.wl && !data->to_block && data->uid != UID_NETD) {
-        // whitelist mode: block any app unless it's explicitly whitelisted.
-        // The blocklist still has priority to determine if a connection should be blocked.
-        data->to_block = !blacklist_match_uid(pd->firewall.wl, data->uid);
-    }
+    check_whitelist_mode_block(pd, tuple, data);
 
     return(data);
 }
@@ -488,18 +752,18 @@ static void process_ndpi_data(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_c
     switch(data->l7proto) {
         case NDPI_PROTOCOL_TLS:
             // ALPN extension in client hello (https://datatracker.ietf.org/doc/html/rfc7301)
-            if(!data->alpn && data->ndpi_flow->protos.tls_quic.alpn) {
-                if(strstr(data->ndpi_flow->protos.tls_quic.alpn, "http/")) {
+            if(!data->alpn && data->ndpi_flow->protos.tls_quic.negotiated_alpn) {
+                if(strstr(data->ndpi_flow->protos.tls_quic.negotiated_alpn, "http/")) {
                     data->alpn = NDPI_PROTOCOL_HTTP;
                     data->update_type |= CONN_UPDATE_INFO;
-                } else if(strstr(data->ndpi_flow->protos.tls_quic.alpn, "imap")) {
+                } else if(strstr(data->ndpi_flow->protos.tls_quic.negotiated_alpn, "imap")) {
                     data->alpn = NDPI_PROTOCOL_MAIL_IMAP;
                     data->update_type |= CONN_UPDATE_INFO;
-                } else if(strstr(data->ndpi_flow->protos.tls_quic.alpn, "stmp")) {
+                } else if(strstr(data->ndpi_flow->protos.tls_quic.negotiated_alpn, "smtp")) {
                     data->alpn = NDPI_PROTOCOL_MAIL_SMTP;
                     data->update_type |= CONN_UPDATE_INFO;
                 } else {
-                    log_d("Unknown ALPN: %s", data->ndpi_flow->protos.tls_quic.alpn);
+                    log_d("Unknown ALPN: %s", data->ndpi_flow->protos.tls_quic.negotiated_alpn);
                     data->alpn = NDPI_PROTOCOL_TLS; // mark to avoid port-based guessing
                 }
             }
@@ -527,11 +791,11 @@ static void process_ndpi_data(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_c
         data->info = pd_strndup(found_info, 256);
         data->info_from_lru = false;
 
-        check_blacklisted_domain(pd, data, tuple);
+        check_domain_block_rules(pd, data, tuple);
         data->update_type |= CONN_UPDATE_INFO;
     }
 
-    if(!pd->root_capture)
+    if(pd->vpn_capture)
         vpn_process_ndpi(pd, tuple, data);
 }
 
@@ -543,10 +807,8 @@ void pd_giveup_dpi(pcapdroid_t *pd, pd_conn_t *data, const zdtun_5tuple_t *tuple
         return;
 
     if(data->l7proto == NDPI_PROTOCOL_UNKNOWN) {
-        uint8_t proto_guessed;
-        struct ndpi_proto n_proto = ndpi_detection_giveup(pd->ndpi, data->ndpi_flow, 1 /* Guess */,
-                              &proto_guessed);
-        data->l7proto = pd_ndpi2proto(n_proto);
+        struct ndpi_proto n_proto = ndpi_detection_giveup(pd->ndpi, data->ndpi_flow);
+        data->l7proto = pd_ndpi2proto(&pd->masterProtos, n_proto);
         data->encrypted_l7 = is_encrypted_l7(pd->ndpi, data->l7proto);
     }
 
@@ -560,6 +822,33 @@ void pd_giveup_dpi(pcapdroid_t *pd, pd_conn_t *data, const zdtun_5tuple_t *tuple
 
 /* ******************************************************* */
 
+// dumps the payload and returns true if fully dumped, false if failed or truncated
+static bool dump_payload(pcapdroid_t *pd, pd_conn_t *conn, bool is_tx, uint64_t ms, uint32_t stream_id,
+                         const char *to_dump, int dump_size, int64_t file_offset)
+{
+    bool truncated = false;
+
+    if((pd->payload_mode == PAYLOAD_MODE_MINIMAL) && (dump_size > MINIMAL_PAYLOAD_MAX_DIRECTION_SIZE)) {
+        dump_size = MINIMAL_PAYLOAD_MAX_DIRECTION_SIZE;
+        truncated = true;
+    }
+
+    if(pd->cb.dump_payload_chunk(pd, conn, is_tx, ms, stream_id, to_dump, dump_size, file_offset)) {
+        conn->has_payload[is_tx] = true;
+        pd->payload_bytes_since_heap_check += dump_size;
+    } else
+        truncated = true;
+
+    if((pd->payload_bytes_since_heap_check >= PAYLOAD_HEAP_CHECK_BYTES) && pd->cb.check_available_heap) {
+        pd->payload_bytes_since_heap_check = 0;
+        pd->cb.check_available_heap(pd);
+    }
+
+    return !truncated;
+}
+
+/* ******************************************************* */
+
 static void process_payload(pcapdroid_t *pd, pkt_context_t *pctx) {
     const zdtun_pkt_t *pkt = pctx->pkt;
     pd_conn_t *data = pctx->data;
@@ -569,22 +858,46 @@ static void process_payload(pcapdroid_t *pd, pkt_context_t *pctx) {
     if((pd->payload_mode == PAYLOAD_MODE_NONE) ||
        (pd->cb.dump_payload_chunk == NULL) ||
        (pkt->l7_len <= 0) ||
+       (data->has_decrypted_data && !pctx->plain_data) ||
        (pd->tls_decryption.enabled && data->proxied)) // NOTE: when performing TLS decryption, TCP connections data is handled by the MitmReceiver
         return;
 
     if((pd->payload_mode != PAYLOAD_MODE_MINIMAL) || !data->has_payload[pctx->is_tx]) {
-        int to_dump = pkt->l7_len;
+        if (pctx->plain_data) {
+            // if there is plaintext (decrypted) data, dump it instead of the encrypted data
+            if (!data->has_decrypted_data) {
+                // existing chunks are encrypted, so drop them
+                if (pd->cb.clear_payload_chunks)
+                    pd->cb.clear_payload_chunks(pd, pctx);
+                data->has_decrypted_data = true;
+            }
 
-        if((pd->payload_mode == PAYLOAD_MODE_MINIMAL) && (pkt->l7_len > MINIMAL_PAYLOAD_MAX_DIRECTION_SIZE)) {
-            to_dump = MINIMAL_PAYLOAD_MAX_DIRECTION_SIZE;
-            truncated = true;
+            truncated = false;
+
+            for (unsigned int i = 0; i < pctx->plain_data->n_items; i++) {
+                const plain_data_item_t *item =  &pctx->plain_data->items[i];
+
+                // the payload may have been disabled by the heap check in dump_payload
+                if (pd->payload_mode == PAYLOAD_MODE_NONE) {
+                    truncated = true;
+                    break;
+                }
+
+                // use the item is_tx and ms timestamp data, rather than the ones from pctx because
+                // http2.c may buffer http responses/resets so they may be processed with a different pctx
+                truncated |= !dump_payload(pd, pctx->data, item->is_tx, item->ms, item->stream_id,
+                                           (const char*) item->data, (int) item->data_length, -1);
+            }
+        } else {
+            int64_t file_offset = -1;
+
+            if (pctx->file_offset >= 0)
+                file_offset = pctx->file_offset + (pkt->l7 - pkt->buf);
+
+            truncated = !dump_payload(pd, pctx->data, pctx->is_tx, pctx->ms, 0, pkt->l7, pkt->l7_len, file_offset);
         }
 
-        if(pd->cb.dump_payload_chunk(pd, pctx, to_dump)) {
-            data->has_payload[pctx->is_tx] = true;
-            updated = true;
-        } else
-            truncated = true;
+        updated = true;
     } else
         truncated = true;
 
@@ -645,6 +958,9 @@ static void process_dns_reply(pd_conn_t *data, pcapdroid_t *pd, const struct zdt
             uint16_t addr_len = ntohs((*(uint16_t*)(reply + 8)));
             reply += 10; len -= 10;
 
+            if (len < addr_len)
+                return;
+
             if((rec_type == 0x1) && (addr_len == 4)) { // A record
                 ipver = 4;
                 rsp_addr.ip4 = *((u_int32_t*)reply);
@@ -679,8 +995,8 @@ static void perform_dpi(pcapdroid_t *pd, pkt_context_t *pctx) {
 
     uint16_t old_proto = data->l7proto;
     struct ndpi_proto n_proto = ndpi_detection_process_packet(pd->ndpi, data->ndpi_flow, (const u_char *)pkt->buf,
-                                  pkt->len, data->last_seen);
-    data->l7proto = pd_ndpi2proto(n_proto);
+                                  pkt->len, data->last_seen, NULL);
+    data->l7proto = pd_ndpi2proto(&pd->masterProtos, n_proto);
 
     if(old_proto != data->l7proto) {
         data->update_type |= CONN_UPDATE_INFO;
@@ -691,7 +1007,7 @@ static void perform_dpi(pcapdroid_t *pd, pkt_context_t *pctx) {
         process_dns_reply(data, pd, pkt);
 
     if(giveup || ((data->l7proto != NDPI_PROTOCOL_UNKNOWN) &&
-            !ndpi_extra_dissection_possible(pd->ndpi, data->ndpi_flow)))
+            (n_proto.state >= NDPI_STATE_MONITORING)))
         pd_giveup_dpi(pd, data, &pkt->tuple); // calls process_ndpi_data
     else
         process_ndpi_data(pd, &pkt->tuple, data);
@@ -733,7 +1049,7 @@ static void perform_dpi(pcapdroid_t *pd, pkt_context_t *pctx) {
 
 static char allocs_buf[1024];
 
-static char* get_allocs_summary() {
+char* get_allocs_summary() {
     char b1[16], b2[16], b3[16], b4[16];
 
     snprintf(allocs_buf, sizeof(allocs_buf),
@@ -834,15 +1150,17 @@ static void* load_new_blacklists(void *data) {
 
         if(blacklist_load_file(bl, get_file_path(pd, subpath), blinfo->type, &stats) == 0) {
             // NOTE: cannot invoke JNI from this thread, must use an intermediate storage
-            if(status_arr->size >= status_arr->cur_items) {
+            if(status_arr->cur_items >= status_arr->size) {
                 /* Extend array */
-                status_arr->size = (status_arr->size == 0) ? 8 : (status_arr->size * 2);
-                status_arr->items = pd_realloc(status_arr->items, status_arr->size * sizeof(bl_status_t));
-                if(!status_arr->items) {
-                    log_e("realloc(bl_status_arr_t) (%d items) failed", status_arr->size);
-                    status_arr->size = 0;
+                int new_size = (status_arr->size == 0) ? 8 : (status_arr->size * 2);
+                bl_status_t *new_items = pd_realloc(status_arr->items, new_size * sizeof(bl_status_t));
+                if(!new_items) {
+                    log_e("realloc(bl_status_arr_t) (%d items) failed", new_size);
                     continue;
                 }
+
+                status_arr->items = new_items;
+                status_arr->size = new_size;
             }
 
             char *fname = pd_strdup(blinfo->fname);
@@ -883,8 +1201,8 @@ static int zdtun_iter_adapter(zdtun_t *zdt, const zdtun_conn_t *conn_info, void 
 }
 
 static void iter_active_connections(pcapdroid_t *pd, conn_cb cb) {
-    if(pd->root_capture)
-        root_iter_connections(pd, cb);
+    if(!pd->vpn_capture)
+        pcap_iter_connections(pd, cb);
     else {
         struct iter_conn_data idata = {
                 .pd = pd,
@@ -896,19 +1214,26 @@ static void iter_active_connections(pcapdroid_t *pd, conn_cb cb) {
 
 /* ******************************************************* */
 
-static int check_blocked_conn_cb(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+static int recompute_conn_block_cb(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
     zdtun_ip_t dst_ip = tuple->dst_ip;
     blacklist_t *fw_bl = pd->firewall.bl;
     bool old_block = data->to_block;
 
     data->to_block = (data->blacklisted_internal || data->blacklisted_ip || data->blacklisted_domain);
+    data->fw_app_block = false;
     if(!data->to_block && pd->firewall.enabled && fw_bl) {
-        data->to_block = blacklist_match_uid(fw_bl, data->uid) ||
-                         blacklist_match_ip(fw_bl, &dst_ip, tuple->ipver) ||
-                         (data->info && data->info[0] && blacklist_match_domain(fw_bl, data->info));
+        // Global IP/domain/country block rules have precedence over the per-app allowlist
+        data->to_block = blacklist_match_ip(fw_bl, &dst_ip, tuple->ipver) ||
+                         (data->info && data->info[0] && blacklist_match_domain(fw_bl, data->info)) ||
+                         blacklist_match_country(fw_bl, data->country_code);
+
+        if(!data->to_block && blacklist_match_uid(fw_bl, data->uid) && !firewall_app_allowlisted(pd, tuple, data)) {
+            data->to_block = true;
+            data->fw_app_block = true;
+        }
     }
-    if(pd->firewall.enabled && pd->firewall.wl_enabled && pd->firewall.wl && !data->to_block && data->uid != UID_NETD)
-        data->to_block = !blacklist_match_uid(pd->firewall.wl, data->uid);
+
+    check_whitelist_mode_block(pd, tuple, data);
 
     if(old_block != data->to_block) {
         data->update_type |= CONN_UPDATE_STATS;
@@ -922,7 +1247,7 @@ static int check_blocked_conn_cb(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, p
 /* ******************************************************* */
 
 // Check if a previously blacklisted connection is now whitelisted
-static int check_blacklisted_conn_cb(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+static int apply_malware_whitelist_cb(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
     blacklist_t *whitelist = pd->malware_detection.whitelist;
     bool changed = false;
 
@@ -945,7 +1270,7 @@ static int check_blacklisted_conn_cb(pcapdroid_t *pd, const zdtun_5tuple_t *tupl
     if(changed) {
         // Possibly unblock the connection
         if(pd->firewall.bl)
-            check_blocked_conn_cb(pd, tuple, data);
+            recompute_conn_block_cb(pd, tuple, data);
 
         data->update_type |= CONN_UPDATE_STATS;
         pd_notify_connection_update(pd, tuple, data);
@@ -975,7 +1300,7 @@ void pd_housekeeping(pcapdroid_t *pd) {
         dump_capture_stats_now = false;
         //log_d("Send stats");
 
-        if(!pd->root_capture)
+        if(pd->vpn_capture)
             zdtun_get_stats(pd->zdt, &pd->stats);
 
         if(pd->cb.send_stats_dump)
@@ -1027,7 +1352,7 @@ void pd_housekeeping(pcapdroid_t *pd) {
         pd->malware_detection.new_wl = NULL;
 
         // Check the active (blacklisted) connections to possibly whitelist (and unblock) them
-        iter_active_connections(pd, check_blacklisted_conn_cb);
+        iter_active_connections(pd, apply_malware_whitelist_cb);
     }
 
     if(pd->firewall.new_bl) {
@@ -1036,14 +1361,14 @@ void pd_housekeeping(pcapdroid_t *pd) {
             blacklist_destroy(pd->firewall.bl);
         pd->firewall.bl = pd->firewall.new_bl;
         pd->firewall.new_bl = NULL;
-        iter_active_connections(pd, check_blocked_conn_cb);
+        iter_active_connections(pd, recompute_conn_block_cb);
     } else if(pd->firewall.new_wl) {
         // Load new whitelist
         if(pd->firewall.wl)
             blacklist_destroy(pd->firewall.wl);
         pd->firewall.wl = pd->firewall.new_wl;
         pd->firewall.new_wl = NULL;
-        iter_active_connections(pd, check_blocked_conn_cb);
+        iter_active_connections(pd, recompute_conn_block_cb);
     }
 
     if(pd->tls_decryption.new_list) {
@@ -1071,15 +1396,26 @@ void pd_refresh_time(pcapdroid_t *pd) {
 
 /* ******************************************************* */
 
-/* Process the packet (e.g. perform DPI) and fill the packet context. */
-void pd_process_packet(pcapdroid_t *pd, zdtun_pkt_t *pkt, bool is_tx, const zdtun_5tuple_t *tuple,
-                       pd_conn_t *data, struct timeval *tv, pkt_context_t *pctx) {
+void pd_init_pkt_context(pkt_context_t *pctx,
+                         zdtun_pkt_t *pkt, bool is_tx, const zdtun_5tuple_t *tuple,
+                         pd_conn_t *data, struct timeval *tv
+) {
     pctx->pkt = pkt;
     pctx->tv = *tv;
     pctx->ms = (uint64_t)tv->tv_sec * 1000 + tv->tv_usec / 1000;
     pctx->is_tx = is_tx;
     pctx->tuple = tuple;
     pctx->data = data;
+    pctx->plain_data = NULL; // managed by capture_libpcap
+    pctx->file_offset = -1;
+}
+
+/* ******************************************************* */
+
+/* Process the packet (e.g. perform DPI) and fill the packet context. */
+void pd_process_packet(pcapdroid_t *pd, pkt_context_t *pctx) {
+    pd_conn_t *data = pctx->data;
+    zdtun_pkt_t *pkt = pctx->pkt;
 
     // NOTE: pd_account_stats will not be called for blocked connections
     data->last_seen = pctx->ms;
@@ -1092,16 +1428,25 @@ void pd_process_packet(pcapdroid_t *pd, zdtun_pkt_t *pkt, bool is_tx, const zdtu
         perform_dpi(pd, pctx);
     }
 
+    if (pctx->plain_data && (data->alpn != NDPI_PROTOCOL_UNKNOWN) && (data->alpn != pctx->data->l7proto)) {
+        // we have the L7 decrypted data
+        pd_giveup_dpi(pd, data, pctx->tuple);
+        pctx->data->l7proto = data->alpn;
+
+        data->update_type |= CONN_UPDATE_INFO;
+        pd_notify_connection_update(pd, pctx->tuple, data);
+    }
+
     process_payload(pd, pctx);
 }
 
 /* ******************************************************* */
 
-void pd_dump_packet(pcapdroid_t *pd, const char *pktbuf, int pktlen, const struct timeval *tv, int uid) {
+void pd_dump_packet(pcapdroid_t *pd, const char *pktbuf, int pktlen, const struct timeval *tv, int uid, u_int ifidx, bool is_tx) {
     if(!pd->pcap_dump.dumper)
         return;
 
-    if(!pcap_dump_packet(pd->pcap_dump.dumper, pktbuf, pktlen, tv, uid))
+    if(!pcap_dump_packet(pd->pcap_dump.dumper, pktbuf, pktlen, tv, uid, ifidx, is_tx))
         stop_pcap_dump(pd);
 }
 
@@ -1119,11 +1464,17 @@ void pd_account_stats(pcapdroid_t *pd, pkt_context_t *pctx) {
         data->sent_bytes += pkt->len;
         pd->capture_stats.sent_pkts++;
         pd->capture_stats.sent_bytes += pkt->len;
+        if(pkt->tuple.ipver == 6) {
+            pd->capture_stats.ipv6_sent_bytes += pkt->len;
+        }
     } else {
         data->rcvd_pkts++;
         data->rcvd_bytes += pkt->len;
         pd->capture_stats.rcvd_pkts++;
         pd->capture_stats.rcvd_bytes += pkt->len;
+        if(pkt->tuple.ipver == 6) {
+            pd->capture_stats.ipv6_rcvd_bytes += pkt->len;
+        }
     }
 
     /* New stats to notify */
@@ -1133,8 +1484,10 @@ void pd_account_stats(pcapdroid_t *pd, pkt_context_t *pctx) {
 
     if((pd->pcap_dump.dumper) &&
             ((pd->pcap_dump.max_pkts_per_flow <= 0) ||
-                ((data->sent_pkts + data->rcvd_pkts) <= pd->pcap_dump.max_pkts_per_flow)))
-        pd_dump_packet(pd, pkt->buf, pkt->len, &pctx->tv, pctx->data->uid);
+                ((data->sent_pkts + data->rcvd_pkts) <= pd->pcap_dump.max_pkts_per_flow))) {
+        u_int ifidx = !pd->vpn_capture ? pctx->data->pcap.ifidx : 0;
+        pd_dump_packet(pd, pkt->buf, pkt->len, &pctx->tv, pctx->data->uid, ifidx, pctx->is_tx);
+    }
 }
 
 /* ******************************************************* */
@@ -1142,6 +1495,7 @@ void pd_account_stats(pcapdroid_t *pd, pkt_context_t *pctx) {
 int pd_run(pcapdroid_t *pd) {
     /* Important: init global state every time. Android may reuse the service. */
     running = true;
+    has_seen_dump_extensions = false;
     netd_resolve_waiting = 0;
 
     /* nDPI */
@@ -1150,6 +1504,7 @@ int pd_run(pcapdroid_t *pd) {
         log_f("nDPI initialization failed");
         return(-1);
     }
+    init_ndpi_protocols_bitmask(&pd->masterProtos);
 
     pd->ip_to_host = ip_lru_init(MAX_HOST_LRU_SIZE);
 
@@ -1164,22 +1519,18 @@ int pd_run(pcapdroid_t *pd) {
     }
 
     if(pd->pcap_dump.enabled) {
-        int max_snaplen = pd->root_capture ? PCAPD_SNAPLEN : VPN_BUFFER_SIZE;
+        int max_snaplen = !pd->vpn_capture ? PCAPD_SNAPLEN : VPN_BUFFER_SIZE;
 
         // use the snaplen provided by the API
         if((pd->pcap_dump.snaplen <= 0) || (pd->pcap_dump.snaplen > max_snaplen))
             pd->pcap_dump.snaplen = max_snaplen;
 
-        pcap_dump_mode_t dump_mode;
-        if(pd->pcap_dump.pcapng_format)
-            dump_mode = PCAPNG_DUMP;
-        else if(pd->pcap_dump.trailer_enabled)
-            dump_mode = PCAP_DUMP_WITH_TRAILER;
-        else
-            dump_mode = PCAP_DUMP;
+        pcap_dump_format_t dump_fmt = pd->pcap_dump.pcapng_format ? PCAPNG_DUMP : PCAP_DUMP;
+        bool dump_extensions = pd->pcap_dump.dump_extensions;
 
-        log_d("dump_mode: %d", dump_mode);
-        pd->pcap_dump.dumper = pcap_new_dumper(dump_mode,pd->pcap_dump.snaplen,
+        log_d("dump_mode: %d - extensions: %u", dump_fmt, dump_extensions);
+        pd->pcap_dump.dumper = pcap_new_dumper(dump_fmt, dump_extensions,
+                                               pd->pcap_dump.snaplen,
                                                pd->pcap_dump.max_dump_size,
                                                pd->cb.send_pcap_dump, pd);
         if(!pd->pcap_dump.dumper) {
@@ -1196,11 +1547,8 @@ int pd_run(pcapdroid_t *pd) {
     bl_num_checked_connections = 0;
     fw_num_checked_connections = 0;
 
-    if(pd->cb.notify_service_status)
-        pd->cb.notify_service_status(pd, "started");
-
     // Run the capture
-    int rv = pd->root_capture ? run_root(pd) : run_vpn(pd);
+    int rv = pd->vpn_capture ? run_vpn(pd) : run_pcap(pd);
 
     log_i("Stopped packet loop");
 
@@ -1247,6 +1595,8 @@ int pd_run(pcapdroid_t *pd) {
 #ifndef FUZZING
     ndpi_exit_detection_module(pd->ndpi);
 #endif
+
+    ndpi_bitmask_free(&pd->masterProtos);
 
     if(pd->pcap_dump.dumper)
         stop_pcap_dump(pd);

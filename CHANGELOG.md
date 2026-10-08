@@ -2,6 +2,180 @@
 
 Releases available at https://github.com/emanuele-f/PCAPdroid/releases
 
+## [2.0.2] - 2026-09-20
+- Fix leaked connections listener causing IllegalStateException
+- Fix out-of-memory crash on large pcap files load with full payload enabled
+- Harden import settings to prevent crashes and protect from social engineering
+- Minor fixes and improvements
+
+## [2.0.1] - 2026-09-09
+- Update maltrail malware blacklist URL
+- Bump mitm addon to 2.4, fixes decryption with root
+- Fix null mitm certificate after export on some devices (#887)
+- Fix firewall not working with always-on VPN when root capture is enabled
+- Fix other inconsistencies when running via always-on VPN / from Intent
+- Fix possible crash in ConnectionsFragment
+
+## [2.0.0] - 2026-08-19
+- PCAPdroid now requires Android 23+
+- The mitm addon now requires Android 24+ and it drops support for the x86 and armeabi-v7a ABIs
+- Add Capture List: show past captures and their size on disk (#281)
+- Implement app isolation (#536)
+- Add settings export and import (#379)
+- Android 17 support: the "Nearby devices" permission is now required
+- Add port mapping exemptions (#861)
+- Make connections log size configurable (#849)
+- Allow to specify the UDP/TCP collector as a domain name (#807)
+- Bump mitm addon to v2.3 (mitmproxy 12.2.3, full 16 KB devices support, fix IPv6 decryption and AttributeError)
+- Bump ushark decryption module (wireshark v4.7.1)
+- Simplify open/decrypt PCAP/Pcapng
+- New translations: BN, FR, HI, JA, KO, MS, UR, VI
+- Fix auto-update from the Github build to the Google Play build
+- Fix binary body corruption in HAR export (#876)
+- Fix RTL layout issues (#880)
+- Minor bug fixes
+
+## [1.9.1] - 2026-02-22
+- Fix minor crashes
+- Switch to facebook/zstd and build from the source
+
+## [1.9.0] - 2026-02-12
+- New HTTP requests view
+- Export HTTP data in the HAR format
+- Add Portuguese (BR) translation
+- Support the zstd compression
+- Fix HTTP/2 handling (possible mismatch of requests and replies)
+- Fix WebSocket data loading from PCAP file
+- Fix buffer overruns and leaks when decrypting PCAP files
+- New language selector on Android 12 and below
+- Select and export individual connections
+- Pretty-print JSON in HTTP data
+- Support using domain names in port mapping
+- Add toggle to show system apps
+- Export data in background threads to avoid UI hangs
+- Fix ushark crash on x86_64 when decrypting PCAP files (F-Droid only)
+
+## [1.8.8] - 2025-09-03
+- Support 16 KB page size devices
+- Make PCAP/CSV file name prefix configurable
+- Fix possible invalid Pcapng block length with root
+- New API options: full_payload, keylog filename, decryption rules (credits: c4rl2s0n)
+
+## [1.8.7] - 2025-07-24
+- Minor fixes
+- Update billing library (Play build)
+
+## [1.8.6] - 2025-05-13
+- Add TCP exporter dump mode (pcap-over-ip)
+- Allow PCAPdroid capture control without prompt via API key
+
+## [1.8.5] - 2025-04-25
+- Fix GeoIP db download with Arabic language
+
+## [1.8.4] - 2025-03-23
+- Fix possible unaligned memory access on ARMv7 in libndpi.so (is_stun)
+- Fix minor crashes on specific devices
+- Remove BUILD_TIME for reproducible F-Droid builds
+- Change icons and add banners according to the Android TV guidelines
+- Update translations
+
+## [1.8.3] - 2025-03-08
+- Fix crash when adding a protocol filter
+- Fix possible Skus deserialization errors (Play build)
+- Fix empty state not visible in edit list views
+- Support building ushark from the source (F-Droid)
+- Update NDK to r26d
+
+## [1.8.2] - 2025-03-04
+- Fix crash on capture start with port mapping rules
+
+## [1.8.1] - 2025-03-04
+- Fix crash on capture start if the geolocation db was downloaded
+
+## [1.8.0] - 2025-03-03
+- Android 15 support with edge-to-edge UI
+- Decrypt TLS traffic in PCAP/Pcapng files (Wireshark integration)
+- New firewall rules: block by country and by CIDR
+- Add support for PCAPdroid extensions in Pcapng
+- Reduce blacklists RAM usage by ~25 MB and increase limit to 1500k rules
+- Show detailed error information for failed connections in VPN mode
+- New UI filter to show connections bigger than a given bytes threshold
+- Add Azerbaijani translation (Jamil Farajov)
+- Add Tamil translation (credits: தமிழ்நேரம்)
+- Update nDPI to 4.12 and reduce library size by 66%
+- Enable r8 minify to reduce apk size
+- Update to Java 17 and enable desugaring to support older devices
+
+## [1.7.5] - 2024-11-09
+- Fix root capture stall when target apps are set
+
+## [1.7.4] - 2024-10-16
+- Fix root capture start in some non-magisk su binaries (credits: jackyzy823)
+- The mitm addon now uses mitmproxy 11
+- Include the package name in the CSV output (credits: Chris Vanstone)
+
+## [1.7.3] - 2024-09-07
+- Allow setting the app language from the system (for Android 13+)
+- Mitm addon v1.2: allow public files write, fix enabled addons reset, fix addons reload
+- You can now use a compatible mitm addon with the same major version
+- Detect always-on VPN enabled after capture start
+- Catch possible crash in getUserBadgedIcon in Android 8
+- Disable unfinished languages: fr, ja, ko, nb, pl, pt
+
+## [1.7.2] - 2024-04-20
+- Fix broken PCAP file loading feature
+- Minor enhancements
+
+## [1.7.1] - 2024-03-28
+- Add toggle for auto-reconnection on third-party VPN termination
+- Fix uninstalled apps not removed from app filter
+- Add IPv6 bytes stats (credits: myzhan)
+
+## [1.7.0] - 2024-02-10
+- Select multiple target apps
+- Copy/export the connections payload
+- Android 14 support
+- mitmproxy 10.1.6 and Doze fix
+- Ability to block QUIC only on decryption
+- Fix decryption status for QUIC connections
+- Fix inaccurate firewall grace period
+- Integrations to run with Tor and DNSCrypt
+- Use your own mitmproxy addons (experimental)
+- Remove mitm-addon permission
+- Show termux main app instead of its sub-apps
+- Use ISO 8601 dates in CSV export
+
+## [1.6.9] - 2023-12-04
+- Fix root capture start on some devices
+- Fix root permission incorrectly requested on read from pcap file
+- Fix capture control modal incorrectly shown
+- Fix possible crash on null CaptureSettings
+- Fix possible SecurityException while opening PCAP file
+
+## [1.6.8] - 2023-09-01
+- Fix root capture/pcap loading in playstore build due to AAB packaging
+- Fix possible permission denied error on PCAP file open
+
+## [1.6.7] - 2023-08-31
+- Fix root capture start failure due to short timeout
+- Fix NumberFormatException in PCAP open / CSV export
+- Add Ukrainian translation (credits: odkate)
+- Do not resolve socks5 server host if disabled
+
+## [1.6.6] - 2023-08-28
+- Add ability to open PCAP/PCAPNG files
+- Add Arabic translation (credits: Mustafa Hamed Kathem)
+- Fix app not blocked by firewall after reinstallation
+- Fix DNS from unknown app incorrectly blocked in firewall whitelist mode
+- Support IPv6 and host names in socks5 mode
+
+## [1.6.5] - 2023-06-15
+- Add ability to inject javascript into web pages (PCAPdroid-mitm)
+- TLS decryption is now rule-based, it only applies to specified connections
+- App icon on Android 13 can be themed now (credits: incycledream)
+- Allow exporting the SSLKEYLOG after anomalous app stop
+- IPv6 fixes: fix ICMPv6, fix crash on invalid DNS, capture of ULA traffic
+
 ## [1.6.4] - 2023-04-24
 - Fix QR code activation crash on Android 32+
 - Update translations

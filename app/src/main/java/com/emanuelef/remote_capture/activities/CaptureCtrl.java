@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.activities;
@@ -37,6 +37,7 @@ import android.widget.ImageView;
 import android.widget.RadioButton;
 import android.widget.TextView;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -104,8 +105,16 @@ public class CaptureCtrl extends AppCompatActivity {
             finish();
         });
 
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                abort();
+            }
+        });
+
         Intent intent = getIntent();
         String action = intent.getStringExtra("action");
+        String api_key = intent.getStringExtra("api_key");
 
         if(action == null) {
             Log.e(TAG, "no action provided");
@@ -116,6 +125,17 @@ public class CaptureCtrl extends AppCompatActivity {
         if(action.equals(ACTION_PEER_INFO)) {
             getPeerInfo();
             return;
+        }
+
+        if(api_key != null) {
+            // authenticate via API key
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+            String my_key = Prefs.getApiKey(prefs);
+
+            if (!my_key.isEmpty() && my_key.equals(api_key)) {
+                processRequest(intent, action);
+                return;
+            }
         }
 
         // Check if a control permission rule was set
@@ -195,32 +215,35 @@ public class CaptureCtrl extends AppCompatActivity {
         getWindow().setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
     }
 
-    @Override
-    public void onBackPressed() {
-        abort();
-    }
-
-    private void abort() {
-        Utils.showToast(this, R.string.ctrl_consent_denied);
+    private void abort(boolean show_toast) {
+        if(show_toast)
+            Utils.showToast(this, R.string.ctrl_consent_denied);
         setResult(RESULT_CANCELED, null);
         finish();
     }
 
+    private void abort() {
+        abort(true);
+    }
+
     // Check if the capture is requesting to send traffic to a remote server.
     // For security reasons, this is only allowed if such server is already configured by
-    // the user in the app prefs.
-    // see also MainActivity.showRemoteServerAlert
+    // the user in the app prefs. Any domain name is treated as remote.
+    // See also MainActivity.showRemoteServerAlert
     private String checkRemoteServerNotAllowed(CaptureSettings settings) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
-        if((settings.dump_mode == Prefs.DumpMode.UDP_EXPORTER) &&
+        boolean exporterEnabled = (settings.dump_mode == Prefs.DumpMode.UDP_EXPORTER) ||
+                (settings.dump_mode == Prefs.DumpMode.TCP_EXPORTER);
+
+        if(exporterEnabled &&
                 !Utils.isLocalNetworkAddress(settings.collector_address) &&
-                !Prefs.getCollectorIp(prefs).equals(settings.collector_address))
+                !Prefs.getCollectorHost(prefs).equals(settings.collector_address))
             return settings.collector_address;
 
         if(settings.socks5_enabled &&
                 !Utils.isLocalNetworkAddress(settings.socks5_proxy_address) &&
-                !Prefs.getSocks5ProxyAddress(prefs).equals(settings.socks5_proxy_address))
+                !Prefs.getSocks5ProxyHost(prefs).equals(settings.socks5_proxy_address))
             return settings.socks5_proxy_address;
 
         // ok
@@ -243,6 +266,14 @@ public class CaptureCtrl extends AppCompatActivity {
                 abort();
                 return;
             }
+
+            if(settings.pcapng_format && !Billing.newInstance(this).isPurchased(Billing.PCAPNG_SKU)) {
+                Utils.showToastLong(this, R.string.feature_unavailable, getString(R.string.pcapng_format));
+                abort();
+                return;
+            }
+
+            PCAPdroid.getInstance().setIsDecryptingPcap(false);
 
             if(!settings.pcap_uri.isEmpty()) {
                 persistableUriPermission.checkPermission(settings.pcap_uri, settings.pcapng_format, granted_uri -> {
@@ -313,6 +344,8 @@ public class CaptureCtrl extends AppCompatActivity {
     private static void putStats(Intent intent, CaptureStats stats) {
         intent.putExtra("bytes_sent", stats.bytes_sent);
         intent.putExtra("bytes_rcvd", stats.bytes_rcvd);
+        intent.putExtra("ipv6_bytes_sent", stats.ipv6_bytes_sent);
+        intent.putExtra("ipv6_bytes_rcvd", stats.ipv6_bytes_rcvd);
         intent.putExtra("bytes_dumped", stats.pcap_dump_size);
         intent.putExtra("pkts_sent", stats.pkts_sent);
         intent.putExtra("pkts_rcvd", stats.pkts_rcvd);
@@ -325,12 +358,11 @@ public class CaptureCtrl extends AppCompatActivity {
         String package_name = getCallingPackage();
         if((package_name == null) || !package_name.equals(BuildConfig.APPLICATION_ID + ".debug")) {
             Log.w(TAG, "getPeerInfo: package name mismatch");
-            abort();
+            abort(false);
             return;
         }
 
         Billing billing = Billing.newInstance(this);
-        billing.setLicense(billing.getLicense());
 
         Intent res = new Intent();
         HashSet<String> purchased = new HashSet<>();

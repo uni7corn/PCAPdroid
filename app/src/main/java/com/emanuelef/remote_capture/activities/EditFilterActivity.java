@@ -14,12 +14,11 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 package com.emanuelef.remote_capture.activities;
 
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Pair;
 import android.view.LayoutInflater;
@@ -29,14 +28,15 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.CheckBox;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
 import androidx.core.view.MenuProvider;
-import androidx.preference.PreferenceManager;
 
 import com.emanuelef.remote_capture.Billing;
 import com.emanuelef.remote_capture.CaptureService;
 import com.emanuelef.remote_capture.ConnectionsRegister;
+import com.emanuelef.remote_capture.PCAPdroid;
 import com.emanuelef.remote_capture.R;
 import com.emanuelef.remote_capture.Utils;
 import com.emanuelef.remote_capture.model.ConnectionDescriptor.Status;
@@ -44,9 +44,9 @@ import com.emanuelef.remote_capture.model.ConnectionDescriptor.DecryptionStatus;
 import com.emanuelef.remote_capture.model.ConnectionDescriptor.FilteringStatus;
 import com.emanuelef.remote_capture.model.FilterDescriptor;
 import com.emanuelef.remote_capture.model.ListInfo;
-import com.emanuelef.remote_capture.model.Prefs;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
+import com.google.android.material.slider.Slider;
 
 import java.util.Arrays;
 import java.util.ArrayList;
@@ -62,6 +62,7 @@ public class EditFilterActivity extends BaseActivity implements MenuProvider {
     private ArrayList<Pair<Status, Chip>> mStatusChips;
     private ArrayList<Pair<DecryptionStatus, Chip>> mDecChips;
     private ChipGroup mInterfaceGroup;
+    private Slider mSizeSider;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,6 +77,13 @@ public class EditFilterActivity extends BaseActivity implements MenuProvider {
             actionBar.setHomeAsUpIndicator(R.drawable.ic_close);
         }
 
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                finishOk();
+            }
+        });
+
         Intent intent = getIntent();
         if(intent != null) {
             FilterDescriptor desc = Utils.getSerializableExtra(intent, FILTER_DESCRIPTOR, FilterDescriptor.class);
@@ -89,6 +97,7 @@ public class EditFilterActivity extends BaseActivity implements MenuProvider {
         mOnlyBlacklisted = findViewById(R.id.only_blacklisted);
         mOnlyCleartext = findViewById(R.id.only_cleartext);
         mInterfaceGroup = findViewById(R.id.interfaces);
+        mSizeSider = findViewById(R.id.size_slider);
 
         findViewById(R.id.edit_mask).setOnClickListener(v -> {
             Intent editIntent = new Intent(this, EditListActivity.class);
@@ -114,16 +123,21 @@ public class EditFilterActivity extends BaseActivity implements MenuProvider {
                 new Pair<>(DecryptionStatus.ERROR, findViewById(R.id.dec_status_error))
         ));
 
-        if(CaptureService.isDecryptingTLS()) {
+        if (PCAPdroid.getInstance().isDecryptingPcap()) {
+            // unable to show the following statuses
+            findViewById(R.id.dec_status_not_decryptable).setVisibility(View.GONE);
+            findViewById(R.id.dec_status_error).setVisibility(View.GONE);
+        }
+
+        if(CaptureService.isDecryptingTLS() || PCAPdroid.getInstance().isDecryptingPcap()) {
             findViewById(R.id.decryption_status_label).setVisibility(View.VISIBLE);
             findViewById(R.id.decryption_status_group).setVisibility(View.VISIBLE);
             mOnlyCleartext.setVisibility(View.GONE);
         }
 
         Billing billing = Billing.newInstance(this);
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
-        if(!Prefs.isMalwareDetectionEnabled(this, prefs))
+        if(!CaptureService.isMalwareDetectionEnabled())
             mOnlyBlacklisted.setVisibility(View.GONE);
 
         if(billing.isFirewallVisible()) {
@@ -144,6 +158,19 @@ public class EditFilterActivity extends BaseActivity implements MenuProvider {
 
             mInterfaceGroup.setVisibility(View.VISIBLE);
             findViewById(R.id.interfaces_label).setVisibility(View.VISIBLE);
+        }
+
+        if (reg != null) {
+            long minSizeKB = mFilter.minSize / 1024;
+            long maxSizeKB = reg.getMaxBytes() / 1024;
+            maxSizeKB = Math.max(maxSizeKB, minSizeKB);
+
+            if (maxSizeKB >= 2) {
+                mSizeSider.setValueTo(maxSizeKB);
+                mSizeSider.setLabelFormatter(value -> Utils.formatBytes(((long) value) * 1024));
+                mSizeSider.setVisibility(View.VISIBLE);
+                findViewById(R.id.size_slider_label).setVisibility(View.VISIBLE);
+            }
         }
 
         model2view();
@@ -172,6 +199,10 @@ public class EditFilterActivity extends BaseActivity implements MenuProvider {
         mOnlyBlacklisted.setChecked(mFilter.onlyBlacklisted);
         mOnlyCleartext.setChecked(mFilter.onlyCleartext);
 
+        long minSizeKB = mFilter.minSize / 1024;
+        if (minSizeKB > 0)
+            mSizeSider.setValue(minSizeKB);
+
         setCheckedChip(mStatusChips, mFilter.status);
         setCheckedChip(mDecChips, mFilter.decStatus);
         setCheckedChip(mFirewallChips, mFilter.filteringStatus);
@@ -196,6 +227,7 @@ public class EditFilterActivity extends BaseActivity implements MenuProvider {
         mFilter.status = getCheckedChip(mStatusChips, Status.STATUS_INVALID);
         mFilter.decStatus = getCheckedChip(mDecChips, DecryptionStatus.INVALID);
         mFilter.filteringStatus = getCheckedChip(mFirewallChips, FilteringStatus.INVALID);
+        mFilter.minSize = ((long) mSizeSider.getValue()) * 1024;
 
         int num_chips = mInterfaceGroup.getChildCount();
         for(int i=0; i<num_chips; i++) {
@@ -219,11 +251,6 @@ public class EditFilterActivity extends BaseActivity implements MenuProvider {
     public boolean onSupportNavigateUp() {
         finishOk();
         return true;
-    }
-
-    @Override
-    public void onBackPressed() {
-        finishOk();
     }
 
     @Override

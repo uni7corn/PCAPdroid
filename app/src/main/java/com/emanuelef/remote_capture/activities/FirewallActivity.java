@@ -34,6 +34,7 @@ import androidx.viewpager2.widget.ViewPager2;
 
 import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.R;
+import com.emanuelef.remote_capture.Utils;
 import com.emanuelef.remote_capture.fragments.EditListFragment;
 import com.emanuelef.remote_capture.fragments.FirewallStatus;
 import com.emanuelef.remote_capture.model.ListInfo;
@@ -61,6 +62,7 @@ public class FirewallActivity extends BaseActivity {
 
         mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
         mPager = findViewById(R.id.pager);
+        Utils.fixViewPager2Insets(mPager);
         setupTabs();
     }
 
@@ -112,6 +114,11 @@ public class FirewallActivity extends BaseActivity {
     private void setupTabs() {
         mPagerAdapter = new StateAdapter(this);
         mPager.setAdapter(mPagerAdapter);
+
+        // Keep all the tabs attached. Otherwise, navigating to a non-adjacent tab detaches an
+        // edit list page from the window, which breaks the ListView CHOICE_MODE_MULTIPLE_MODAL
+        // long-press selection when the page is shown again (e.g. the whitelist tab).
+        mPager.setOffscreenPageLimit(TOTAL_COUNT - 1);
 
         new TabLayoutMediator(findViewById(R.id.tablayout), mPager, (tab, position) ->
                 tab.setText(getString(mPagerAdapter.getPageTitle(position)))

@@ -23,10 +23,13 @@
 #include <stdint.h>
 #include <net/if.h>
 #include <pcap.h>
+#include <linux/limits.h>
+
 #include "nl_utils.h"
 #include "common/uid_lru.h"
 #include "common/uid_resolver.h"
 #include "common/utils.h"
+#include "pcapd.h"
 #include "zdtun.h"
 
 #define PCAPD_MAX_INTERFACES 16
@@ -35,17 +38,18 @@ typedef struct {
   char *ifnames[PCAPD_MAX_INTERFACES];
   char *bpf;
   char *log_file;
-  int uid_filter;
+  int* uid_filter;
   int num_interfaces;
   int inet_ifid;
   uint8_t dump_datalink;
   uint8_t daemonize;
   uint8_t no_client;
   uint8_t quiet;
+  uid_t log_uid;
 } pcapd_conf_t;
 
 typedef struct {
-  char name[IFNAMSIZ];
+  char name[PATH_MAX];
   int ifidx;
   uint8_t ifid;       // positional interface index
   uint8_t is_file;
@@ -80,6 +84,6 @@ typedef struct {
 } pcapd_runtime_t;
 
 void init_conf(pcapd_conf_t *conf);
-int run_pcap_dump(pcapd_conf_t *conf);
+pcapd_rv run_pcap_dump(pcapd_conf_t *conf);
 
 #endif

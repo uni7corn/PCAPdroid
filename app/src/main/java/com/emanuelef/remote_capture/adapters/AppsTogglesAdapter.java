@@ -32,13 +32,14 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.widget.SwitchCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.emanuelef.remote_capture.AppIconLoader;
 import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.R;
 import com.emanuelef.remote_capture.model.AppDescriptor;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
+import androidx.collection.ArraySet;
 import java.util.List;
 import java.util.Set;
 
@@ -48,13 +49,14 @@ public class AppsTogglesAdapter extends RecyclerView.Adapter<AppsTogglesAdapter.
     private final Set<String> mCheckedItems;
     private AppToggleListener mListener;
     private String mFilter = "";
+    private boolean mShowSystemApps = false;
     private List<AppDescriptor> mApps = new ArrayList<>();
     private final List<AppDescriptor> mFilteredApps = new ArrayList<>();
     private @Nullable RecyclerView mRecyclerView;
 
     public AppsTogglesAdapter(Context context, Set<String> checkedItems) {
         mLayoutInflater = (LayoutInflater)context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-        mCheckedItems = new HashSet<>(checkedItems);
+        mCheckedItems = new ArraySet<>(checkedItems);
         mListener = null;
     }
 
@@ -99,8 +101,12 @@ public class AppsTogglesAdapter extends RecyclerView.Adapter<AppsTogglesAdapter.
         view.setOnClickListener((v) -> {
             if(mRecyclerView != null) {
                 int pos = recyclerViewHolder.getAbsoluteAdapterPosition();
-                boolean checked = mCheckedItems.contains(getItem(pos).getPackageName());
-                handleToggle(pos, !checked);
+                AppDescriptor app = getItem(pos);
+
+                if (app != null) {
+                    boolean checked = mCheckedItems.contains(app.getPackageName());
+                    handleToggle(pos, !checked);
+                }
             }
         });
 
@@ -123,15 +129,18 @@ public class AppsTogglesAdapter extends RecyclerView.Adapter<AppsTogglesAdapter.
         holder.packageName.setText(app.getPackageName());
         holder.toggle.setChecked(mCheckedItems.contains(app.getPackageName()));
 
-        if(app.getIcon() != null)
-            holder.icon.setImageDrawable(app.getIcon());
+        AppIconLoader.setIcon(holder.icon, app, null);
+    }
+
+    private boolean isFiltering() {
+        return !mFilter.isEmpty() || !mShowSystemApps;
     }
 
     private List<AppDescriptor> getApps() {
-        if(mFilter.isEmpty())
-            return mApps;
-        else
+        if(isFiltering())
             return mFilteredApps;
+        else
+            return mApps;
     }
 
     @Override
@@ -148,6 +157,9 @@ public class AppsTogglesAdapter extends RecyclerView.Adapter<AppsTogglesAdapter.
 
     private void handleToggle(int old_pos, boolean checked) {
         AppDescriptor app = getItem(old_pos);
+        if (app == null)
+            return;
+
         String packageName = app.getPackageName();
 
         if(checked == mCheckedItems.contains(packageName))
@@ -160,6 +172,12 @@ public class AppsTogglesAdapter extends RecyclerView.Adapter<AppsTogglesAdapter.
 
         if(mListener != null)
             mListener.onAppToggled(app, checked);
+
+        if(!checked && !mShowSystemApps && app.isBackgroundSystemApp()) {
+            getApps().remove(old_pos);
+            notifyItemRemoved(old_pos);
+            return;
+        }
 
         List<AppDescriptor> apps = getApps();
 
@@ -210,10 +228,13 @@ public class AppsTogglesAdapter extends RecyclerView.Adapter<AppsTogglesAdapter.
     private void refreshedFiteredApps() {
         mFilteredApps.clear();
 
-        if(!mFilter.isEmpty()) {
+        if(isFiltering()) {
             for(AppDescriptor app: mApps) {
-                if(app.matches(mFilter, false))
-                    mFilteredApps.add(app);
+                if(!mFilter.isEmpty() && !app.matches(mFilter, false))
+                    continue;
+                if(!mShowSystemApps && app.isBackgroundSystemApp() && !mCheckedItems.contains(app.getPackageName()))
+                    continue;
+                mFilteredApps.add(app);
             }
         }
 
@@ -228,6 +249,11 @@ public class AppsTogglesAdapter extends RecyclerView.Adapter<AppsTogglesAdapter.
 
     public void setFilter(String text) {
         mFilter = text;
+        refreshedFiteredApps();
+    }
+
+    public void setShowSystemApps(boolean show) {
+        mShowSystemApps = show;
         refreshedFiteredApps();
     }
 

@@ -1,16 +1,21 @@
-<i>PCAPdroid</i> adalah aplikasi open source yang memungkinkan Anda memantau dan mengekspor lalu lintas jaringan. Aplikasi ini mensimulasikan VPN untuk tangkapan non-root, tetapi bertentangan dengan VPN, lalu lintas diproses secara lokal dalam perangkat.
+<i>PCAPdroid</i> adalah aplikasi sumber terbuka yang ramah privasi yang dapat melacak, menganalisis, dan memblokir koneksi yang dibuat oleh aplikasi lain di perangkat.
+Aplikasi ini juga dapat mengekspor PCAP dump dari lalu lintas, memeriksa permintaan HTTP, mendekripsi lalu lintas TLS, dan banyak lagi.
 
-<b>Fitur:</b>
+PCAPdroid mensimulasikan VPN untuk menangkap lalu lintas jaringan tanpa perlu akses root. Ini tidak menggunakan server VPN jarak jauh, sebaliknya data diproses secara lokal di perangkat.
 
-* Catat dan periksa koneksi yang dibuat oleh pengguna dan aplikasi sistem
-* Ekstrak SNI, permintaan DNS, permintaan HTTP, URL HTTP, dan alamat IP jarak jauh
-* Buat aturan untuk menyaring jaringan yang baik dan menemukan anomali
-* Simpan lalu lintas ke file PCAP, unduh dari browser, atau ke penerima jarak jauh untuk analisis real-time (misalnya wireshark)
-* Kombinasikan dengan mitmproxy untuk mendekripsi lalu lintas HTTPS/TLS (diperlukan pengetahuan teknis)
-* Gunakan akses root untuk menangkap lalu lintas VPN dari aplikasi lain
+<b>Fitur utama:</b>
 
-Jika Anda berencana menggunakan PCAPdroid untuk melakukan analisis paket, silakan lihat <a href='https://emanuele-f.github.io/PCAPdroid/quick_start#14-packet-analysis'>bagian spesifik</a> dari manual.
+* Merekam dan menganalisis koneksi yang dibuat oleh aplikasi pengguna dan sistem
+* Dapatkan ringkasan berapa banyak data yang dikirim dan diterima setiap aplikasi
+* Penggunaan baterai rendah, untuk perekaman terus-menerus sepanjang hari
+* Ekstrak host dan alamat IP dari DNS, TLS, dan HTTP
+* Rekam lalu lintas ke file PCAP dengan metadata aplikasi tambahan
+* Kirim lalu lintas melalui PCAP-over-IP untuk analisis waktu nyata (misalnya di Wireshark)
+* Mendekripsi lalu lintas HTTPS/TLS, ekstrak URL, dan simpan SSLKEYLOGFILE
+* Periksa permintaan/balasan HTTP dan ekspor ke HAR
+* Identifikasi negara dan ASN dari server jarak jauh melalui pencarian database offline
+* Pada perangkat yang sudah di-root, tangkap lalu lintas saat aplikasi VPN lain berjalan
 
-Kunjungi <a href='https://github.com/emanuele-f/PCAPdroid'>repo Github proyek</a> untuk detail selengkapnya.
+Jika Anda berencana menggunakan PCAPdroid untuk melakukan analisis paket, cek <a href='https://emanuele-f.github.io/PCAPdroid/quick_start#14-packet-analysis'>bagian khusus</a> pada manual.
 
-Anda dapat <a href="https://t.me/PCAPdroid">bergabung dengan komunitas</a> di telegram untuk mendiskusikan dan menerima pembaruan tentang fitur-fitur terbaru.
+Bergabunglah dengan komunitas internasional PCAPdroid <a href="https://t.me/PCAPdroid">di Telegram</a> atau <a href="https://matrix.to/#/#pcapdroid:matrix.org">di Matrix</a>.

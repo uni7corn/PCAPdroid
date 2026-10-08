@@ -21,6 +21,7 @@
 #define PCAPDROID_MEMTRACK_H
 
 #include <malloc.h>
+#include <string.h>
 #include <stdatomic.h>
 
 // Uncomment to track allocations (with a performance impact)
@@ -72,7 +73,10 @@ static void* _pcapdroid_realloc(void *ptr, size_t size, enum memtrack_scope scop
 }
 
 static char* _pcapdroid_strndup(const char *s, size_t n, enum memtrack_scope scope) {
-    size_t l = min(strlen(s), n);
+    size_t l = strlen(s);
+    if (l > n)
+        l = n;
+
     char *c = (char*) _pcapdroid_malloc(l + 1, scope);
     if(!c)
         return NULL;
@@ -87,6 +91,14 @@ static inline char* _pcapdroid_strdup(const char *s, enum memtrack_scope scope) 
 
 static inline void* pd_ndpi_malloc(size_t size) {
     return _pcapdroid_malloc(size, MEMTRACK_NDPI);
+}
+
+static inline void* pd_ndpi_calloc(size_t nmemb, size_t size) {
+    return _pcapdroid_calloc(nmemb, size, MEMTRACK_NDPI);
+}
+
+static inline void* pd_ndpi_realloc(void *ptr, size_t size) {
+    return _pcapdroid_realloc(ptr, size, MEMTRACK_NDPI);
 }
 
 static inline void pd_ndpi_free(void *ptr) {

@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture;
@@ -32,7 +32,9 @@ import com.emanuelef.remote_capture.model.AppStats;
 import com.emanuelef.remote_capture.model.ConnectionDescriptor;
 import com.emanuelef.remote_capture.model.ConnectionUpdate;
 
-import java.net.InetAddress;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -64,16 +66,19 @@ public class ConnectionsRegister {
     private int mNumMalicious;
     private int mNumBlocked;
     private long mLastFirewallBlock;
+    private long mMaxBytes;
     private final SparseArray<AppStats> mAppsStats;
     private final SparseIntArray mConnsByIface;
     private final ArrayList<ConnectionsListener> mListeners;
     private final Geolocation mGeo;
     private final AppsResolver mAppsResolver;
+    private FileChannel mPcapFile;
 
     public ConnectionsRegister(Context ctx, int _size) {
         mTail = 0;
         mCurItems = 0;
         mUntrackedItems = 0;
+        mMaxBytes = 0;
         mSize = _size;
         mGeo = new Geolocation(ctx);
         mItemsRing = new ConnectionDescriptor[mSize];
@@ -81,6 +86,25 @@ public class ConnectionsRegister {
         mAppsStats = new SparseArray<>(); // uid -> AppStats
         mConnsByIface = new SparseIntArray();
         mAppsResolver = new AppsResolver(ctx);
+    }
+
+    // Opens the PCAP file being loaded, from which the payload of the connections is read on demand.
+    // The file is kept open until cleanup, as the payload is browsed after the capture stops
+    public synchronized void openPcapFile(String path) {
+        try {
+            mPcapFile = new FileInputStream(path).getChannel();
+        } catch (IOException e) {
+            Log.e(TAG, "Could not open the PCAP file: " + e);
+        }
+    }
+
+    public synchronized void cleanup() {
+        Utils.safeClose(mPcapFile);
+        mPcapFile = null;
+    }
+
+    public synchronized @Nullable FileChannel getPcapFile() {
+        return mPcapFile;
     }
 
     // returns the position in mItemsRing of the oldest connection
@@ -131,7 +155,8 @@ public class ConnectionsRegister {
 
         int out_items = conns.length - Math.min((mSize - mCurItems), conns.length);
         int insert_pos = mCurItems;
-        ConnectionDescriptor []removedItems = null;
+        boolean recalcMaxBytes = false;
+        ConnectionDescriptor[] removedItems = null;
 
         //Log.d(TAG, "newConnections[" + mNumItems + "/" + mSize +"]: insert " + conns.length +
         //        " items at " + mTail + " (removed: " + out_items + " at " + firstPos() + ")");
@@ -152,8 +177,12 @@ public class ConnectionsRegister {
                         else
                             mConnsByIface.put(conn.ifidx, num_conn);
                     }
+
                     if(conn.isBlacklisted())
                         mNumMalicious--;
+
+                    if ((conn.sent_bytes + conn.rcvd_bytes) == mMaxBytes)
+                        recalcMaxBytes = true;
                 }
 
                 removedItems[i] = conn;
@@ -176,10 +205,8 @@ public class ConnectionsRegister {
                 mConnsByIface.put(conn.ifidx, num_conn + 1);
             }
 
-            // Geolocation
-            InetAddress dstAddr = conn.getDstAddr();
-            conn.country = mGeo.getCountryCode(dstAddr);
-            conn.asn = mGeo.getASN(dstAddr);
+            // ASN (country is set by native code)
+            conn.asn = mGeo.getASN(conn.getDstAddr());
             //Log.d(TAG, "IP geolocation: IP=" + conn.dst_ip + " -> country=" + conn.country + ", ASN: " + conn.asn);
 
             AppDescriptor app = mAppsResolver.getAppByUid(conn.uid, 0);
@@ -191,9 +218,18 @@ public class ConnectionsRegister {
             stats.numConnections++;
             stats.rcvdBytes += conn.rcvd_bytes;
             stats.sentBytes += conn.sent_bytes;
+
+            long totBytes = conn.sent_bytes + conn.rcvd_bytes;
+            if (totBytes > mMaxBytes) {
+                mMaxBytes = totBytes;
+                recalcMaxBytes = false;
+            }
         }
 
         mUntrackedItems += out_items;
+
+        if (recalcMaxBytes)
+            calculateMaxBytes();
 
         for(ConnectionsListener listener: mListeners) {
             if(out_items > 0)
@@ -202,6 +238,17 @@ public class ConnectionsRegister {
             if(conns.length > 0)
                 listener.connectionsAdded(insert_pos - out_items, conns);
         }
+    }
+
+    private synchronized void calculateMaxBytes() {
+        long maxBytes = 0;
+
+        for(int i = 0; i < mCurItems; i++) {
+            ConnectionDescriptor conn = mItemsRing[i];
+            maxBytes = Math.max(maxBytes, conn.sent_bytes + conn.rcvd_bytes);
+        }
+
+        mMaxBytes = maxBytes;
     }
 
     // called by the CaptureService in a separate thread when connections should be updated
@@ -231,6 +278,7 @@ public class ConnectionsRegister {
                 AppStats stats = getAppsStatsOrCreate(conn.uid);
                 stats.sentBytes += update.sent_bytes - conn.sent_bytes;
                 stats.rcvdBytes += update.rcvd_bytes - conn.rcvd_bytes;
+                mMaxBytes = Math.max(mMaxBytes, update.sent_bytes + update.rcvd_bytes);
 
                 //Log.d(TAG, "update " + update.incr_id + " -> " + update.update_type);
                 conn.processUpdate(update);
@@ -397,5 +445,9 @@ public class ConnectionsRegister {
             ConnectionDescriptor conn = mItemsRing[i];
             conn.dropPayload();
         }
+    }
+
+    public synchronized long getMaxBytes() {
+        return mMaxBytes;
     }
 }

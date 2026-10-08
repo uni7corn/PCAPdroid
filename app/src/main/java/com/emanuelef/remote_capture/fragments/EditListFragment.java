@@ -46,11 +46,15 @@ import androidx.core.view.MenuProvider;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.Lifecycle;
 
+import com.emanuelef.remote_capture.AppsResolver;
 import com.emanuelef.remote_capture.Log;
+import com.emanuelef.remote_capture.PCAPdroid;
 import com.emanuelef.remote_capture.R;
 import com.emanuelef.remote_capture.Utils;
+import com.emanuelef.remote_capture.activities.EditListActivity;
 import com.emanuelef.remote_capture.adapters.ListEditAdapter;
 import com.emanuelef.remote_capture.model.AppDescriptor;
+import com.emanuelef.remote_capture.model.Blocklist;
 import com.emanuelef.remote_capture.model.ListInfo;
 import com.emanuelef.remote_capture.model.MatchList;
 import com.emanuelef.remote_capture.model.MatchList.RuleType;
@@ -77,9 +81,10 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
     private boolean mIsOwnUpdate;
     private ActionMode mActionMode;
     private AppSelectDialog mAppSelDialog;
-    private int MAX_RULES_BEFORE_WARNING = 5000;
+    private static final int MAX_RULES_BEFORE_WARNING = 5000;
     private static final String TAG = "EditListFragment";
     private static final String LIST_TYPE_ARG = "list_type";
+    private static final String APP_PACKAGE_ARG = "app_package";
 
     private final ActivityResultLauncher<Intent> exportLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), this::exportResult);
@@ -87,10 +92,16 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), this::importResult);
 
     public static EditListFragment newInstance(ListInfo.Type list) {
-        EditListFragment fragment = new EditListFragment();
+        return newInstance(list, null);
+    }
+
+    public static EditListFragment newInstance(ListInfo.Type list, String appPackage) {
         Bundle args = new Bundle();
         args.putSerializable(LIST_TYPE_ARG, list);
+        if(appPackage != null)
+            args.putString(APP_PACKAGE_ARG, appPackage);
 
+        EditListFragment fragment = new EditListFragment();
         fragment.setArguments(args);
         return fragment;
     }
@@ -106,15 +117,28 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         mListView = view.findViewById(R.id.listview);
         mEmptyText = view.findViewById(R.id.list_empty);
+        view.findViewById(R.id.simple_list).setFitsSystemWindows(true);
 
         assert getArguments() != null;
-        mListInfo = new ListInfo(Utils.getSerializable(getArguments(), LIST_TYPE_ARG, ListInfo.Type.class));
+        ListInfo.Type listType = Utils.getSerializable(getArguments(), LIST_TYPE_ARG, ListInfo.Type.class);
+        String appPkg = getArguments().getString(APP_PACKAGE_ARG);
+        mListInfo = new ListInfo(listType, appPkg);
         mList = mListInfo.getList();
         mList.addListChangeListener(this);
 
         mAdapter = new ListEditAdapter(requireContext());
+        if(mListInfo.getType() == ListInfo.Type.BLOCKLIST)
+            mAdapter.setAppAllowlistSource((Blocklist) mList);
         mListView.setAdapter(mAdapter);
         mListView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE_MODAL);
+
+        if(mListInfo.getType() == ListInfo.Type.BLOCKLIST) {
+            mListView.setOnItemClickListener((parent, v, position, id) -> {
+                MatchList.Rule rule = mAdapter.getItem(position);
+                if((rule != null) && (rule.getType() == RuleType.APP))
+                    openAppAllowlist((String) rule.getValue());
+            });
+        }
         mListView.setMultiChoiceModeListener(new AbsListView.MultiChoiceModeListener() {
             @Override
             public void onItemCheckedStateChanged(ActionMode mode, int position, long id, boolean checked) {
@@ -175,6 +199,15 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+
+        // refresh the allowed count, which may have changed in the per-app allowlist activity
+        if(mListInfo.getType() == ListInfo.Type.BLOCKLIST)
+            mAdapter.notifyDataSetChanged();
+    }
+
+    @Override
     public void onDetach() {
         super.onDetach();
         abortAppSelection();
@@ -191,10 +224,12 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
         builder.setMessage(R.string.rules_delete_confirm);
         builder.setCancelable(true);
         builder.setPositiveButton(R.string.yes, (dialog, which) -> {
+            // Per-app allowlists of removed APP rules are dropped by the Blocklist itself (see
+            // Blocklist.removeRule / clear), which owns them.
             if(mSelected.size() >= mAdapter.getCount()) {
                 mAdapter.clear();
                 mList.clear();
-                mList.save();
+                mListInfo.save();
             } else {
                 for(MatchList.Rule item : mSelected)
                     mAdapter.remove(item);
@@ -286,8 +321,8 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
     }
 
     private void showAddIpRule() {
-        RuleAddDialog.showText(requireContext(), R.string.ip_address, (value, field) -> {
-            if(!Utils.validateIpAddress(value)) {
+        RuleAddDialog.showText(requireContext(), R.string.ip_address_or_cidr, (value, field) -> {
+            if(!Utils.validateCidr(value)) {
                 field.setError(getString(R.string.invalid));
                 return false;
             }
@@ -337,6 +372,10 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
                 Utils.showToastLong(ctx, R.string.rule_exists);
             else
                 saveAndReload();
+
+            Blocklist blocklist = PCAPdroid.getInstance().getBlocklist();
+            blocklist.showNoticeIfGeoMissing(ctx);
+
             return true;
         });
     }
@@ -383,13 +422,20 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
         }
     }
 
+    private void openAppAllowlist(String pkg) {
+        Intent intent = new Intent(requireContext(), EditListActivity.class);
+        intent.putExtra(EditListActivity.LIST_TYPE_EXTRA, ListInfo.Type.APP_ALLOWLIST);
+        intent.putExtra(EditListActivity.APP_PACKAGE_EXTRA, pkg);
+        startActivity(intent);
+    }
+
     private void recheckListSize() {
         mEmptyText.setVisibility((mAdapter.getCount() == 0) ? View.VISIBLE : View.GONE);
     }
 
     private void saveAndReload() {
         Log.d(TAG, "saveAndReload");
-        mList.save();
+        mListInfo.save();
         mListInfo.reloadRules();
     }
 
@@ -410,13 +456,20 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
 
             for(MatchList.Rule rule: toRemove)
                 mList.removeRule(rule);
-            mList.save();
+            mListInfo.save();
         }
     }
 
     private String getExportName() {
         String fname = getString(mListInfo.getTitle()).toLowerCase().replaceAll(" ", "_");
-        return "PCAPdroid_" + fname + ".json";
+        String prefix = "PCAPdroid";
+
+        if(mListInfo.getType() == ListInfo.Type.APP_ALLOWLIST) {
+            AppDescriptor app = AppsResolver.resolveInstalledApp(requireContext().getPackageManager(), mListInfo.getAppPackage(), 0);
+            prefix = ((app != null) ? app.getName() : mListInfo.getAppPackage()).replaceAll(" ", "_");
+        }
+
+        return prefix + "_" + fname + ".json";
     }
 
     private void startExport() {
@@ -472,7 +525,7 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
 
     private void importRulesData(String data, boolean limit_check) {
         Context context = requireContext();
-        MatchList rules = new MatchList(context, "");
+        MatchList rules = mList.newEmptyList();
 
         int num_rules = rules.fromJson(data, limit_check ? MAX_RULES_BEFORE_WARNING : -1);
         if((num_rules <= 0) || rules.isEmpty()) {
@@ -533,6 +586,12 @@ public class EditListFragment extends Fragment implements MatchList.ListChangeLi
 
         String msg = String.format(context.getResources().getString(R.string.rules_import_success), num_imported);
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
+
+        if (mList instanceof Blocklist) {
+            Blocklist blocklist = PCAPdroid.getInstance().getBlocklist();
+            if (blocklist.hasCountryRules())
+                blocklist.showNoticeIfGeoMissing(context);
+        }
     }
 
     @Override

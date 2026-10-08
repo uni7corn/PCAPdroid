@@ -4,6 +4,11 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <item
+        android:id="@+id/select_connection"
+        android:title="@string/select"
+        android:orderInCategory="0" />
+
+    <item
         android:title="@string/hide">
         <menu>
             <item
@@ -66,6 +71,12 @@
                 android:title=""
                 tools:title="@string/host_val"
                 android:visible="false" />
+
+            <item
+                android:id="@+id/block_country"
+                android:title=""
+                tools:title="@string/country_val"
+                android:visible="false" />
         </menu>
     </item>
 
@@ -106,6 +117,52 @@
 
             <item
                 android:id="@+id/unblock_domain"
+                android:title=""
+                tools:title="@string/host_val"
+                android:visible="false" />
+
+            <item
+                android:id="@+id/unblock_country"
+                android:title=""
+                tools:title="@string/country_val"
+                android:visible="false" />
+        </menu>
+    </item>
+
+    <item android:id="@+id/app_allowlist_menu" android:title="@string/allowlist" android:visible="false">
+        <menu>
+            <item
+                android:id="@+id/allow_ip"
+                android:title=""
+                tools:title="@string/ip_address_val"
+                android:visible="false" />
+
+            <item
+                android:id="@+id/deny_ip"
+                android:title=""
+                tools:title="@string/ip_address_val"
+                android:visible="false" />
+
+            <item
+                android:id="@+id/allow_host"
+                android:title=""
+                tools:title="@string/host_val"
+                android:visible="false" />
+
+            <item
+                android:id="@+id/deny_host"
+                android:title=""
+                tools:title="@string/host_val"
+                android:visible="false" />
+
+            <item
+                android:id="@+id/allow_domain"
+                android:title=""
+                tools:title="@string/host_val"
+                android:visible="false" />
+
+            <item
+                android:id="@+id/deny_domain"
                 android:title=""
                 tools:title="@string/host_val"
                 android:visible="false" />

@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.model;
@@ -23,16 +23,25 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
+import androidx.annotation.WorkerThread;
 
 import com.emanuelef.remote_capture.AppsResolver;
 import com.emanuelef.remote_capture.CaptureService;
+import com.emanuelef.remote_capture.ConnectionsRegister;
 import com.emanuelef.remote_capture.HTTPReassembly;
+import com.emanuelef.remote_capture.HttpLog;
+import com.emanuelef.remote_capture.Log;
+import com.emanuelef.remote_capture.PCAPdroid;
 import com.emanuelef.remote_capture.R;
+import com.emanuelef.remote_capture.Utils;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicReference;
 
 /* Holds the information about a single connection.
@@ -43,7 +52,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * thread. However this does not create concurrency problems as the update only increments counters
  * or sets a previously null field to a non-null value.
  */
-public class ConnectionDescriptor {
+public class ConnectionDescriptor implements HTTPReassembly.ReassemblyListener {
+    public static final String TAG = "ConnectionDescriptor";
+
     // sync with zdtun_conn_status_t
     public static final int CONN_STATUS_NEW = 0,
         CONN_STATUS_CONNECTING = 1,
@@ -101,30 +112,41 @@ public class ConnectionDescriptor {
     public String info;
     public String url;
     public String l7proto;
-    private final ArrayList<PayloadChunk> payload_chunks; // must be synchronized
+    private final PayloadIndex payload_chunks; // must be synchronized
     public final int uid;
     public final int ifidx;
     public final int incr_id;
     private final boolean mitm_decrypt; // true if the connection is under mitm for TLS decryption
+    private boolean internal_decrypt;
     public int status;
+    public int error;
     private int tcp_flags;
     private boolean blacklisted_ip;
     private boolean blacklisted_host;
     public boolean is_blocked;
-    public boolean decryption_ignored;
+    private boolean port_mapping_applied;
+    private boolean decryption_ignored;
     public boolean netd_block_missed;
     private boolean payload_truncated;
     private boolean encrypted_l7;     // application layer is encrypted (e.g. TLS)
     public boolean encrypted_payload; // actual payload is encrypted (e.g. telegram - see Utils.hasEncryptedPayload)
+    private boolean has_websocket_data;
     public String decryption_error;
+    public String js_injected_scripts;
     public String country;
     public Geomodel.ASN asn;
 
     /* Internal */
     public boolean alerted;
     public boolean block_accounted;
+    private HTTPReassembly mHttpReqReassembly;
+    private HTTPReassembly mHttpReplyReassembly;
+    private int mFirstReqChunkPos = -1;
+    private int mFirstReplyChunkPos = -1;
+    private LinkedList<HttpLog.HttpRequest> mPendingRequests;
 
-    public ConnectionDescriptor(int _incr_id, int _ipver, int _ipproto, String _src_ip, String _dst_ip,
+    // NOTE: invoked from JNI
+    public ConnectionDescriptor(int _incr_id, int _ipver, int _ipproto, String _src_ip, String _dst_ip, String _country,
                                 int _src_port, int _dst_port, int _local_port, int _uid, int _ifidx,
                                 boolean _mitm_decrypt, long when) {
         incr_id = _incr_id;
@@ -139,12 +161,14 @@ public class ConnectionDescriptor {
         ifidx = _ifidx;
         first_seen = last_seen = when;
         l7proto = "";
-        country = "";
+        country = _country;
         asn = new Geomodel.ASN();
-        payload_chunks = new ArrayList<>();
+        payload_chunks = new PayloadIndex();
         mitm_decrypt = _mitm_decrypt;
+        internal_decrypt = false;
     }
 
+    // NOTE: invoked from either JNI (dumpNewConnection) or ConnectionsRegister
     public void processUpdate(ConnectionUpdate update) {
         // The "update_type" is used to limit the amount of data sent via the JNI
         if((update.update_type & ConnectionUpdate.UPDATE_STATS) != 0) {
@@ -154,11 +178,13 @@ public class ConnectionDescriptor {
             rcvd_pkts = update.rcvd_pkts;
             blocked_pkts = update.blocked_pkts;
             status = (update.status & 0x00FF);
+            error = (update.status & 0xFF0000) >> 16;
+            port_mapping_applied = (update.status & 0x2000) != 0;
             decryption_ignored = (update.status & 0x1000) != 0;
             netd_block_missed = (update.status & 0x0800) != 0;
             is_blocked = (update.status & 0x0400) != 0;
-            blacklisted_ip = (update.status & 0x0100) != 0;
             blacklisted_host = (update.status & 0x0200) != 0;
+            blacklisted_ip = (update.status & 0x0100) != 0;
             last_seen = update.last_seen;
             tcp_flags = update.tcp_flags; // NOTE: only for root capture
 
@@ -178,17 +204,60 @@ public class ConnectionDescriptor {
         }
         if((update.update_type & ConnectionUpdate.UPDATE_PAYLOAD) != 0) {
             // Payload for decryptable connections should be received via the MitmReceiver
-            assert(decryption_ignored || isNotDecryptable());
+            assert(decryption_ignored || isNotDecryptable() || PCAPdroid.getInstance().isDecryptingPcap());
 
-            // Some pending updates with payload may still be received after low memory has been
-            // triggered and payload disabled
-            if(!CaptureService.isLowMemory()) {
-                synchronized (this) {
-                    if(update.payload_chunks != null)
-                        payload_chunks.addAll(update.payload_chunks);
+            synchronized (this) {
+                // Some pending updates with payload may still be received after low memory has been
+                // triggered and payload disabled
+                if(!CaptureService.isLowMemory()) {
+                    if (update.payload_chunks != null) {
+                        boolean has_http_log = (CaptureService.getHttpLog() != null);
+                        int chunk_pos = payload_chunks.size();
+
+                        for (PayloadChunk chunk: update.payload_chunks) {
+                            if (has_http_log && (chunk.type == PayloadChunk.ChunkType.HTTP))
+                                logHttpChunk(chunk, chunk_pos);
+
+                            // NOTE: logHttpChunk may change the chunk type
+                            // from HTTP to WEBSOCKET after detecting a websocket upgrade
+                            // so this condition should be checked separately
+                            if (chunk.type == PayloadChunk.ChunkType.WEBSOCKET)
+                                has_websocket_data = true;
+
+                            payload_chunks.add(chunk);
+                            chunk_pos++;
+                        }
+                    }
                     payload_truncated = update.payload_truncated;
+                    internal_decrypt = update.payload_decrypted;
                 }
             }
+        }
+    }
+
+    // See HttpLog
+    private void logHttpChunk(PayloadChunk chunk, int chunk_pos) {
+        assert (chunk.type == PayloadChunk.ChunkType.HTTP);
+
+        if (CaptureService.getHttpLog() == null)
+            return;
+
+        if (mHttpReqReassembly == null) {
+            // use a lightweight reassembly, without dumping the payload
+            mHttpReqReassembly = new HTTPReassembly(true, this, false);
+            mHttpReplyReassembly = new HTTPReassembly(true, this, false);
+            mPendingRequests = new LinkedList<>();
+        }
+
+        // will call onChunkReassembled
+        if (chunk.is_sent) {
+            if ((mFirstReqChunkPos == -1) && !chunk.isHttp2Rst())
+                mFirstReqChunkPos = chunk_pos;
+            mHttpReqReassembly.handleChunk(chunk);
+        } else {
+            if ((mFirstReplyChunkPos == -1) && !chunk.isHttp2Rst())
+                mFirstReplyChunkPos = chunk_pos;
+            mHttpReplyReassembly.handleChunk(chunk);
         }
     }
 
@@ -252,10 +321,10 @@ public class ConnectionDescriptor {
             return DecryptionStatus.CLEARTEXT;
         else if(decryption_error != null)
             return DecryptionStatus.ERROR;
-        else if(decryption_ignored)
-            return DecryptionStatus.ENCRYPTED;
         else if(isNotDecryptable())
             return DecryptionStatus.NOT_DECRYPTABLE;
+        else if(decryption_ignored || (PCAPdroid.getInstance().isDecryptingPcap() && !internal_decrypt))
+            return DecryptionStatus.ENCRYPTED;
         else if(isDecrypted())
             return DecryptionStatus.DECRYPTED;
         else
@@ -301,55 +370,126 @@ public class ConnectionDescriptor {
         payload_truncated = true;
     }
 
-    public boolean isPayloadTruncated() {
-        return payload_truncated;
-    }
+    public boolean isPayloadTruncated() { return payload_truncated; }
+    public boolean isPortMappingApplied() { return port_mapping_applied; }
+    public boolean hasWebsocketData() { return has_websocket_data; }
 
-    public boolean isNotDecryptable()   { return !decryption_ignored && (encrypted_payload || !mitm_decrypt); }
-    public boolean isDecrypted()        { return !decryption_ignored && !isNotDecryptable() && (getNumPayloadChunks() > 0); }
+    public boolean isMitmDecrypt()      { return mitm_decrypt; }
+    public boolean isNotDecryptable()   { return !decryption_ignored && (encrypted_payload || !mitm_decrypt) && !PCAPdroid.getInstance().isDecryptingPcap(); }
+    public boolean isDecrypted()        { return !decryption_ignored && !isNotDecryptable() && (mitm_decrypt || internal_decrypt) && (getNumPayloadChunks() > 0); }
     public boolean isCleartext()        { return !encrypted_payload && !encrypted_l7; }
 
     public synchronized int getNumPayloadChunks() { return payload_chunks.size(); }
 
+    // Returns null for the chunks on disk, which must be read via readPayloadChunk
     public synchronized @Nullable PayloadChunk getPayloadChunk(int idx) {
         if(getNumPayloadChunks() <= idx)
             return null;
-        return payload_chunks.get(idx);
+        return payload_chunks.getInMemory(idx);
     }
 
+    // Returns the chunk, possibly reading it from the PCAP file, or null on error
+    @WorkerThread
+    public @Nullable PayloadChunk readPayloadChunk(int idx) {
+        return readPayloadChunk(idx, Integer.MAX_VALUE);
+    }
+
+    // Only reads up to max_len bytes of the chunks on disk. The in-memory chunks are returned in full
+    @WorkerThread
+    public @Nullable PayloadChunk readPayloadChunk(int idx, int max_len) {
+        ConnectionsRegister reg = CaptureService.getConnsRegister();
+        return readPayloadChunk(idx, (reg != null) ? reg.getPcapFile() : null, max_len);
+    }
+
+    @VisibleForTesting
+    @WorkerThread
+    @Nullable PayloadChunk readPayloadChunk(int idx, @Nullable FileChannel pcapFile) {
+        return readPayloadChunk(idx, pcapFile, Integer.MAX_VALUE);
+    }
+
+    @VisibleForTesting
+    @WorkerThread
+    @Nullable PayloadChunk readPayloadChunk(int idx, @Nullable FileChannel pcapFile, int max_len) {
+        long offset;
+        int len;
+        PayloadChunk.ChunkType type;
+        boolean is_sent;
+        long timestamp;
+
+        synchronized (this) {
+            if(getNumPayloadChunks() <= idx)
+                return null;
+
+            if(!payload_chunks.isOnDisk(idx))
+                return payload_chunks.getInMemory(idx);
+
+            offset = payload_chunks.getFileOffset(idx);
+            len = Math.min(payload_chunks.getLength(idx), max_len);
+            type = payload_chunks.getType(idx);
+            is_sent = payload_chunks.isSent(idx);
+            timestamp = payload_chunks.getTimestamp(idx);
+        }
+
+        if(pcapFile == null)
+            return null;
+
+        try {
+            byte[] payload = Utils.readFully(pcapFile, offset, len);
+            return new PayloadChunk(payload, type, is_sent, timestamp, 0);
+        } catch (IOException e) {
+            Log.w(TAG, "Could not read chunk #" + idx + ": " + e);
+            return null;
+        }
+    }
+
+    public synchronized PayloadChunk.ChunkType getChunkType(int idx) { return payload_chunks.getType(idx); }
+    public synchronized boolean isChunkSent(int idx) { return payload_chunks.isSent(idx); }
+    public synchronized int getChunkLength(int idx) { return payload_chunks.getLength(idx); }
+    public synchronized long getChunkTimestamp(int idx) { return payload_chunks.getTimestamp(idx); }
+    public synchronized boolean isChunkOnDisk(int idx) { return payload_chunks.isOnDisk(idx); }
+    public synchronized boolean hasHttpChunks() { return payload_chunks.hasHttp(); }
+    public synchronized boolean isFirstChunkPrintable() { return payload_chunks.isFirstChunkPrintable(); }
+
     public synchronized void addPayloadChunkMitm(PayloadChunk chunk) {
+        if (chunk.type == PayloadChunk.ChunkType.HTTP)
+            logHttpChunk(chunk, payload_chunks.size());
+        else if (chunk.type == PayloadChunk.ChunkType.WEBSOCKET)
+            has_websocket_data = true;
+
         payload_chunks.add(chunk);
         payload_length += chunk.payload.length;
     }
 
     public synchronized void dropPayload() {
-        payload_chunks.clear();
+        payload_chunks.dropInMemory();
+
+        // the websocket chunks are always in memory, so they are gone
+        has_websocket_data = false;
     }
 
     private synchronized boolean hasHttp(boolean is_sent) {
-        for(PayloadChunk chunk: payload_chunks) {
-            if(chunk.is_sent == is_sent)
-                return (chunk.type == PayloadChunk.ChunkType.HTTP);
-        }
-
-        return false;
+        return (payload_chunks.getFirstChunkType(is_sent) == PayloadChunk.ChunkType.HTTP);
     }
     public boolean hasHttpRequest() { return hasHttp(true); }
     public boolean hasHttpResponse() { return hasHttp(false); }
 
-    private synchronized String getHttp(boolean is_sent) {
-        if(getNumPayloadChunks() == 0)
-            return "";
+    private synchronized PayloadChunk getHttpChunks(boolean is_sent, int firstChunkPos) {
+        if((getNumPayloadChunks() == 0) || (firstChunkPos < 0))
+            return null;
 
-        // Need to wrap the String to set it from the lambda
-        final AtomicReference<String> rv = new AtomicReference<>();
-
-        HTTPReassembly reassembly = new HTTPReassembly(CaptureService.getCurPayloadMode() == Prefs.PayloadMode.FULL, chunk ->
-                rv.set(new String(chunk.payload, StandardCharsets.UTF_8)));
+        // Need to wrap the chunk to set it from the lambda
+        final AtomicReference<PayloadChunk> rv = new AtomicReference<>();
+        HTTPReassembly reassembly = new HTTPReassembly(
+                CaptureService.getCurPayloadMode() == Prefs.PayloadMode.FULL,
+                rv::set
+        );
 
         // Possibly reassemble/decode the request
-        for(PayloadChunk chunk: payload_chunks) {
-            if(chunk.is_sent == is_sent)
+        for (int i = firstChunkPos; i < payload_chunks.size(); i++) {
+            // the chunks on disk are RAW, so they cannot be part of the HTTP data
+            PayloadChunk chunk = payload_chunks.getInMemory(i);
+
+            if((chunk != null) && (chunk.is_sent == is_sent))
                 reassembly.handleChunk(chunk);
 
             // Stop at the first reassembly/chunk
@@ -359,8 +499,88 @@ public class ConnectionDescriptor {
 
         return rv.get();
     }
-    public String getHttpRequest() { return getHttp(true); }
-    public String getHttpResponse() { return getHttp(false); }
+
+    private String getHttpAsString(boolean is_sent) {
+        PayloadChunk reassembled = getHttpChunks(is_sent, 0);
+        if (reassembled == null)
+            return "";
+
+        return new String(reassembled.payload, StandardCharsets.UTF_8);
+    }
+
+    public String getHttpRequest() { return getHttpAsString(true); }
+    public String getHttpResponse() { return getHttpAsString(false); }
+
+    public PayloadChunk getHttpRequestChunk(int firstChunkPos) { return getHttpChunks(true, firstChunkPos); }
+    public PayloadChunk getHttpResponseChunk(int firstChunkPos) { return getHttpChunks(false, firstChunkPos); }
+
+    @Override
+    public void onChunkReassembled(PayloadChunk chunk) {
+        if (chunk.type != PayloadChunk.ChunkType.HTTP)
+            return;
+
+        HttpLog httplog = CaptureService.getHttpLog();
+        if (httplog == null)
+            return;
+
+        if (chunk.is_sent && !chunk.isHttp2Rst()) {
+            HttpLog.HttpRequest request = new HttpLog.HttpRequest(this, mFirstReqChunkPos);
+            request.host = !chunk.httpHost.isEmpty() ? chunk.httpHost : info;
+            request.method = chunk.httpMethod;
+            request.path = chunk.httpPath;
+            request.query = chunk.httpQuery;
+            request.bodyLength = chunk.httpBodyLength;
+            request.streamId = chunk.stream_id;
+            request.timestamp = chunk.timestamp;
+            httplog.addHttpRequest(request);
+
+            mPendingRequests.add(request);
+            mFirstReqChunkPos = -1;
+        } else {
+            // match the reply to the request
+            HttpLog.HttpRequest request = null;
+
+            if (chunk.stream_id == 0) {
+                // if HTTP/1, then the request is the first in the list
+                if (!mPendingRequests.isEmpty())
+                    request = mPendingRequests.remove(0);
+            } else {
+                // if HTTP/2, use the stream ID for the matching
+                int idx = 0;
+                for (HttpLog.HttpRequest req: mPendingRequests) {
+                    if (req.streamId == chunk.stream_id)
+                        break;
+
+                    idx++;
+                }
+
+                if (idx < mPendingRequests.size())
+                    request = mPendingRequests.remove(idx);
+            }
+
+            if (request != null) {
+                if (!chunk.isHttp2Rst()) {
+                    HttpLog.HttpReply reply = new HttpLog.HttpReply(request, mFirstReplyChunkPos);
+                    reply.responseCode = chunk.httpResponseCode;
+                    reply.responseStatus = chunk.httpResponseStatus;
+                    reply.contentType = chunk.httpContentType;
+                    reply.bodyLength = chunk.httpBodyLength;
+                    request.reply = reply;
+
+                    httplog.addHttpReply(reply);
+                    mFirstReplyChunkPos = -1;
+                } else {
+                    request.httpRst = true;
+                    Log.d(TAG, "Got RST: " + request.getUrl());
+                }
+            } else if (!chunk.is_sent) { // ignore HTTP requests with RST
+                if (chunk.isHttp2Rst())
+                    Log.w(TAG, "Unmatched HTTP RST (sent=" + chunk.is_sent + ", stream=" + chunk.stream_id + ")");
+                else
+                    Log.w(TAG, "Unmatched HTTP reply (sent=" + chunk.is_sent + ", stream=" + chunk.stream_id + ")");
+            }
+        }
+    }
 
     public boolean hasSeenStart() {
         if((ipproto != 6 /* TCP */) || !CaptureService.isCapturingAsRoot())

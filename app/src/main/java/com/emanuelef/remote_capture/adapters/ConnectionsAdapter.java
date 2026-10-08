@@ -14,15 +14,17 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.adapters;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
 import android.util.SparseIntArray;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,10 +32,11 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.collection.ArraySet;
 import androidx.core.content.ContextCompat;
-import androidx.preference.PreferenceManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.emanuelef.remote_capture.AppIconLoader;
 import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.PCAPdroid;
 import com.emanuelef.remote_capture.interfaces.ConnectionsListener;
@@ -46,7 +49,6 @@ import com.emanuelef.remote_capture.R;
 import com.emanuelef.remote_capture.Utils;
 import com.emanuelef.remote_capture.model.FilterDescriptor;
 import com.emanuelef.remote_capture.model.MatchList;
-import com.emanuelef.remote_capture.model.Prefs;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -58,10 +60,14 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
     private final Drawable mUnknownIcon;
     private int mUnfilteredItemsCount;
     private View.OnClickListener mListener;
+    private View.OnLongClickListener mSelectionLongClickListener;
     private final AppsResolver mAppsResolver;
     private final Context mContext;
     private ConnectionDescriptor mSelectedItem;
     private int mNumRemovedItems;
+    private final ArraySet<Integer> mSelectedItems = new ArraySet<>();
+    private final int mSelectedColor;
+    private final int mSelectableBackground;
 
     // maps a connection ID to a position in mFilteredConn. Positions are shifted by mNumRemovedItems
     // to provide an always increasing position even when items are removed. The correct unshifted
@@ -76,8 +82,10 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
         ImageView icon;
+        ImageView jsInjectorInd;
         ImageView blacklistedInd;
         ImageView blockedInd;
+        ImageView redirectedInd;
         ImageView decryptionInd;
         TextView statusInd;
         TextView remote;
@@ -99,8 +107,10 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
             decryptionInd = itemView.findViewById(R.id.decryption_status);
             appName = itemView.findViewById(R.id.app_name);
             lastSeen = itemView.findViewById(R.id.last_seen);
+            jsInjectorInd = itemView.findViewById(R.id.js_injector);
             blacklistedInd = itemView.findViewById(R.id.blacklisted);
             blockedInd = itemView.findViewById(R.id.blocked);
+            redirectedInd = itemView.findViewById(R.id.redirected);
             //countryFlag = itemView.findViewById(R.id.country_flag);
 
             Context context = itemView.getContext();
@@ -110,11 +120,9 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
         @SuppressWarnings("deprecation")
         public void bindConn(Context context, ConnectionDescriptor conn, AppsResolver apps, Drawable unknownIcon) {
             AppDescriptor app = apps.getAppByUid(conn.uid, 0);
-            Drawable appIcon;
             String l7Text;
 
-            appIcon = ((app != null) && (app.getIcon() != null)) ? app.getIcon() : unknownIcon;
-            icon.setImageDrawable(appIcon);
+            AppIconLoader.setIcon(icon, app, unknownIcon);
 
             if((conn.info != null) && (conn.info.length() > 0))
                 remote.setText(conn.info);
@@ -143,6 +151,10 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
             else if((conn.status == ConnectionDescriptor.CONN_STATUS_CLOSED)
                     || (conn.status == ConnectionDescriptor.CONN_STATUS_RESET))
                 color = R.color.statusClosed;
+            else if ((conn.status == ConnectionDescriptor.CONN_STATUS_ERROR)
+                    || ((conn.status == ConnectionDescriptor.CONN_STATUS_SOCKET_ERROR))
+                    || (conn.status == ConnectionDescriptor.CONN_STATUS_UNREACHABLE))
+                color = R.color.warning;
             else
                 color = R.color.statusError;
 
@@ -155,10 +167,12 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
                 countryFlag.setCountryCode(conn.country);
             }*/
 
+            jsInjectorInd.setVisibility(((conn.js_injected_scripts != null) && !conn.js_injected_scripts.isEmpty()) ? View.VISIBLE : View.GONE);
             blacklistedInd.setVisibility(conn.isBlacklisted() ? View.VISIBLE : View.GONE);
             blockedInd.setVisibility(conn.is_blocked ? View.VISIBLE : View.GONE);
+            redirectedInd.setVisibility((conn.isPortMappingApplied() && !conn.is_blocked) ? View.VISIBLE : View.GONE);
 
-            if(CaptureService.isDecryptingTLS()) {
+            if(CaptureService.isDecryptingTLS() || PCAPdroid.getInstance().isDecryptingPcap()) {
                 decryptionInd.setVisibility(View.VISIBLE);
                 Utils.setDecryptionIcon(decryptionInd, conn);
             } else
@@ -178,6 +192,12 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
         mIdToFilteredPos = new SparseIntArray();
         mMask = PCAPdroid.getInstance().getVisualizationMask();
         mSearch = null;
+        TypedArray a = context.obtainStyledAttributes(new int[]{android.R.attr.colorControlHighlight});
+        mSelectedColor = a.getColor(0, 0x40808080);
+        a.recycle();
+        TypedValue tv = new TypedValue();
+        context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tv, true);
+        mSelectableBackground = tv.resourceId;
         setHasStableIds(true);
     }
 
@@ -200,6 +220,9 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
         ViewHolder holder = new ViewHolder(view);
 
         view.setOnLongClickListener(v -> {
+            if((mSelectionLongClickListener != null) && mSelectionLongClickListener.onLongClick(v))
+                return true;
+
             // see registerForContextMenu
             mSelectedItem = getItem(holder.getAbsoluteAdapterPosition());
             return false;
@@ -217,13 +240,18 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
         }
 
         holder.bindConn(mContext, conn, mAppsResolver, mUnknownIcon);
+
+        if(mSelectedItems.contains(conn.incr_id))
+            holder.itemView.setBackgroundColor(mSelectedColor);
+        else
+            holder.itemView.setBackgroundResource(mSelectableBackground);
     }
 
     @Override
     public long getItemId(int pos) {
         ConnectionDescriptor conn = getItem(pos);
 
-        return ((conn != null) ? conn.incr_id : Utils.UID_UNKNOWN);
+        return ((conn != null) ? conn.incr_id : -1);
     }
 
     private boolean matches(ConnectionDescriptor conn) {
@@ -306,6 +334,8 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
         for(ConnectionDescriptor conn: conns) {
             if(conn == null)
                 continue;
+
+            mSelectedItems.remove(conn.incr_id);
 
             int pos = getFilteredItemPos(conn.incr_id);
             if(pos != -1) {
@@ -439,10 +469,10 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
         return (mSearch != null) || mFilter.isSet();
     }
 
-    public String dumpConnectionsCsv() {
+    public String dumpConnectionsCsv(boolean selectedOnly) {
         StringBuilder builder = new StringBuilder();
         AppsResolver resolver = new AppsResolver(mContext);
-        boolean malwareDetection = Prefs.isMalwareDetectionEnabled(mContext, PreferenceManager.getDefaultSharedPreferences(mContext));
+        boolean malwareDetection = CaptureService.isMalwareDetectionEnabled();
 
         String header = mContext.getString(R.string.connections_csv_fields);
         builder.append(header);
@@ -450,11 +480,10 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
             builder.append(",Malicious");
         builder.append("\n");
 
-        // Contents
-        for(int i=0; i<getItemCount(); i++) {
+        for(int i = 0; i < getItemCount(); i++) {
             ConnectionDescriptor conn = getItem(i);
 
-            if(conn != null) {
+            if((conn != null) && (!selectedOnly || mSelectedItems.contains(conn.incr_id))) {
                 AppDescriptor app = resolver.getAppByUid(conn.uid, 0);
 
                 builder.append(conn.ipproto);                               builder.append(",");
@@ -464,6 +493,7 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
                 builder.append(conn.dst_port);                              builder.append(",");
                 builder.append(conn.uid);                                   builder.append(",");
                 builder.append((app != null) ? app.getName() : "");         builder.append(",");
+                builder.append((app != null) ? app.getPackageName() : "");  builder.append(",");
                 builder.append(conn.l7proto);                               builder.append(",");
                 builder.append(conn.getStatusLabel(mContext));              builder.append(",");
                 builder.append((conn.info != null) ? conn.info : "");       builder.append(",");
@@ -471,8 +501,8 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
                 builder.append(conn.rcvd_bytes);                            builder.append(",");
                 builder.append(conn.sent_pkts);                             builder.append(",");
                 builder.append(conn.rcvd_pkts);                             builder.append(",");
-                builder.append(conn.first_seen);                            builder.append(",");
-                builder.append(conn.last_seen);
+                builder.append(Utils.formatMillisIso8601(mContext, conn.first_seen));                            builder.append(",");
+                builder.append(Utils.formatMillisIso8601(mContext, conn.last_seen));
 
                 if(malwareDetection) {
                     builder.append(",");
@@ -486,5 +516,59 @@ public class ConnectionsAdapter extends RecyclerView.Adapter<ConnectionsAdapter.
         }
 
         return builder.toString();
+    }
+
+    public void toggleSelection(int position) {
+        ConnectionDescriptor conn = getItem(position);
+        if(conn == null)
+            return;
+
+        if(!mSelectedItems.remove(conn.incr_id))
+            mSelectedItems.add(conn.incr_id);
+        notifyItemChanged(position);
+    }
+
+    public void selectItem(int position) {
+        ConnectionDescriptor conn = getItem(position);
+        if(conn == null)
+            return;
+
+        mSelectedItems.add(conn.incr_id);
+        notifyItemChanged(position);
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void clearSelection() {
+        mSelectedItems.clear();
+        notifyDataSetChanged();
+    }
+
+    public int getSelectedCount() {
+        return mSelectedItems.size();
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void selectAll() {
+        for(int i = 0; i < getItemCount(); i++) {
+            ConnectionDescriptor conn = getItem(i);
+            if(conn != null)
+                mSelectedItems.add(conn.incr_id);
+        }
+        notifyDataSetChanged();
+    }
+
+    public void setSelectionLongClickListener(View.OnLongClickListener listener) {
+        mSelectionLongClickListener = listener;
+    }
+
+    public ArrayList<Integer> getFilteredConnectionIds() {
+        if (mFilteredConn == null)
+            return null;
+
+        ArrayList<Integer> ids = new ArrayList<>(mFilteredConn.size());
+        for (ConnectionDescriptor conn : mFilteredConn) {
+            ids.add(conn.incr_id);
+        }
+        return ids;
     }
 }

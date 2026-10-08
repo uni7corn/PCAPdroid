@@ -14,8 +14,11 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2021 - Emanuele Faranda
+ * Copyright 2021-26 - Emanuele Faranda
  */
+
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 
 #include "pcapdroid.h"
 #include "common/utils.h"
@@ -48,7 +51,7 @@ static void protectSocketCallback(zdtun_t *zdt, socket_t sock) {
     pcapdroid_t *pd = ((pcapdroid_t*)zdtun_userdata(zdt));
     JNIEnv *env = pd->env;
 
-    if(pd->root_capture)
+    if(!pd->vpn_capture)
         return;
 
     /* Call VpnService protect */
@@ -97,7 +100,8 @@ static int remote2vpn(zdtun_t *zdt, zdtun_pkt_t *pkt, const zdtun_conn_t *conn_i
     pkt_context_t pctx;
     pd_refresh_time(pd);
 
-    pd_process_packet(pd, pkt, false, tuple, data, get_pkt_timestamp(pd, &tv), &pctx);
+    pd_init_pkt_context(&pctx, pkt, false, tuple, data, get_pkt_timestamp(pd, &tv));
+    pd_process_packet(pd, &pctx);
     if(data->to_block) {
         data->blocked_pkts++;
         data->update_type |= CONN_UPDATE_STATS;
@@ -163,7 +167,7 @@ static bool check_dns_req_allowed(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_conte
         // try with known DNS servers
         zdtun_ip_t dst_ip = tuple->dst_ip;
 
-        if(blacklist_match_ip(pd->vpn.known_dns_servers, &dst_ip, tuple->ipver)) {
+        if(is_known_dns_ip(&dst_ip, tuple->ipver)) {
             char ip[INET6_ADDRSTRLEN];
             int family = (tuple->ipver == 4) ? AF_INET : AF_INET6;
 
@@ -227,15 +231,16 @@ static bool spoof_dns_reply(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_context_t *
 
     int remaining = pkt->l7_len - sizeof(dns_packet_t);
     int qlen=0;
-    while(remaining >= 5) {
-        if(!req->queries[qlen])
-            break;
+    while((remaining >= 5) && req->queries[qlen]) {
         qlen++;
         remaining--;
     }
 
-    if((req->queries[qlen] != 0) || (req->queries[qlen + 1] != 0) ||
-       (req->queries[qlen + 3] != 0) || (req->queries[qlen + 4] != 1))
+    if(remaining < 5)
+        return false; // no room for the query terminator and the type/class
+
+    if((req->queries[qlen + 1] != 0) || (req->queries[qlen + 3] != 0) ||
+       (req->queries[qlen + 4] != 1))
         return false; // invalid
 
     uint8_t qtype = req->queries[qlen + 2];
@@ -330,6 +335,7 @@ static void connection_closed(zdtun_t *zdt, const zdtun_conn_t *conn_info) {
 
     pd_giveup_dpi(pd, data, tuple);
     data->status = zdtun_conn_get_status(conn_info);
+    data->error = zdtun_conn_get_error(conn_info);
     data->to_purge = true;
 }
 
@@ -342,84 +348,67 @@ static void update_conn_status(zdtun_t *zdt, const zdtun_pkt_t *pkt, uint8_t fro
 
     // Update the connection status
     data->status = zdtun_conn_get_status(conn_info);
-    if(data->status >= CONN_STATUS_CLOSED)
+    if(data->status >= CONN_STATUS_CLOSED) {
         data->to_purge = true;
+        data->error = zdtun_conn_get_error(conn_info);
+    }
 }
 
 /* ******************************************************* */
 
+static bool matches_decryption_whitelist(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+    zdtun_ip_t dst_ip = tuple->dst_ip;
+
+    if(!pd->tls_decryption.list)
+        return false;
+
+    // NOTE: domain matching only works if a prior DNS reply is seen (see ip_lru_find in pd_new_connection)
+    return blacklist_match_ip(pd->tls_decryption.list, &dst_ip, tuple->ipver) ||
+        blacklist_match_uid(pd->tls_decryption.list, data->uid) ||
+        (data->info && blacklist_match_domain(pd->tls_decryption.list, data->info));
+}
+
+/* ******************************************************* */
+
+// NOTE: this handles both user-specified SOCKS5 and TLS decryption
 static bool should_proxify(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
-    // NOTE: connections must be proxified as soon as the first packet arrives.
-    // In case of TLS decryption, since we cannot reliably determine TLS connections with 1 packet,
-    // we must proxy all the TCP connections.
-    if(!pd->socks5.enabled || (tuple->ipproto != IPPROTO_TCP)) {
-        data->decryption_ignored = true;
+    if(!pd->socks5.enabled)
         return false;
+
+    if (pd->tls_decryption.list) {
+        // TLS decryption
+        if(!matches_decryption_whitelist(pd, tuple, data)) {
+            data->decryption_ignored = true;
+            return false;
+        }
+
+        // Since we cannot reliably determine TLS connections with 1 packet, and connections must be
+        // proxified on the 1st packet, we proxify all the TCP connections
     }
 
-    if(pd->tls_decryption.list) {
-        zdtun_ip_t dst_ip = tuple->dst_ip;
-
-        // NOTE: domain matching only works if a prior DNS reply is seen (see ip_lru_find in pd_new_connection)
-        if(blacklist_match_ip(pd->tls_decryption.list, &dst_ip, tuple->ipver) ||
-            blacklist_match_uid(pd->tls_decryption.list, data->uid) ||
-            (data->info && blacklist_match_domain(pd->tls_decryption.list, data->info)))
-            return true;
-
-        data->decryption_ignored = true;
-        return false;
-    }
-
-    return true;
+    return (tuple->ipproto == IPPROTO_TCP);
 }
 
 /* ******************************************************* */
 
 void vpn_process_ndpi(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
-    if(pd->vpn.block_quic && (data->l7proto == NDPI_PROTOCOL_QUIC)) {
-        data->blacklisted_internal = true;
-        data->to_block = true;
+    if(data->l7proto == NDPI_PROTOCOL_QUIC) {
+        block_quic_mode_t block_mode = pd->vpn.block_quic_mode;
+
+        if ((block_mode == BLOCK_QUIC_MODE_ALWAYS) ||
+                ((block_mode == BLOCK_QUIC_MODE_TO_DECRYPT) && matches_decryption_whitelist(pd, tuple, data))) {
+            data->blacklisted_internal = true;
+            data->to_block = true;
+        }
     }
 
     if(block_private_dns && !data->to_block &&
             (data->l7proto == NDPI_PROTOCOL_TLS) &&
-            data->info && blacklist_match_domain(pd->vpn.known_dns_servers, data->info)) {
+            data->info && is_known_dns_domain(data->info)) {
         log_d("blocking connection to private DNS server %s", data->info);
         data->blacklisted_internal = true;
         data->to_block = true;
     }
-}
-
-/* ******************************************************* */
-
-static void load_dns_servers(pcapdroid_t *pd) {
-    // IP addresses (both legacy and private DNS). These are used to count DNS queries and
-    // redirect DNS queries to the public DNS server (see check_dns_req_allowed)
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "8.8.8.8");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "8.8.4.4");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "1.1.1.1");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "1.0.0.1");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "2001:4860:4860::8888");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "2001:4860:4860::8844");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "2606:4700:4700::64");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "2606:4700:4700::6400");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "2606:4700:4700::1111");
-    blacklist_add_ipstr(pd->vpn.known_dns_servers, "2606:4700:4700::1001");
-
-    // Domains (only private DNS)
-    // https://help.firewalla.com/hc/en-us/articles/360060661873-Dealing-DNS-over-HTTPS-and-DNS-over-TLS-on-your-network
-    blacklist_add_domain(pd->vpn.known_dns_servers, "dns.google");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "chrome.cloudflare-dns.com");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "mozilla.cloudflare-dns.com");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "doh.cleanbrowsing.org");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "chromium.dns.nextdns.io");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "firefox.dns.nextdns.io");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "dns.quad9.net");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "doh.opendns.com");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "dns.adguard.com");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "dot.libredns.gr");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "dns.dnslify.com");
-    blacklist_add_domain(pd->vpn.known_dns_servers, "dns-tls.qis.io");
 }
 
 /* ******************************************************* */
@@ -438,8 +427,7 @@ int run_vpn(pcapdroid_t *pd) {
 
 #if ANDROID
     pd->vpn.resolver = init_uid_resolver(pd->sdk_ver, pd->env, pd->capture_service);
-    pd->vpn.known_dns_servers = blacklist_init();
-    pd->vpn.block_quic = getIntPref(pd->env, pd->capture_service, "blockQuick");
+    pd->vpn.block_quic_mode = getIntPref(pd->env, pd->capture_service, "getBlockQuickMode");
 
     pd->vpn.ipv4.enabled = (bool) getIntPref(pd->env, pd->capture_service, "getIPv4Enabled");
     pd->vpn.ipv4.dns_server = getIPv4Pref(pd->env, pd->capture_service, "getDnsServer");
@@ -457,8 +445,6 @@ int run_vpn(pcapdroid_t *pd) {
         .on_connection_close = connection_closed,
     };
 
-    load_dns_servers(pd);
-
     zdt = zdtun_init(&callbacks, pd);
     if(zdt == NULL) {
         log_f("zdtun_init failed");
@@ -473,9 +459,7 @@ int run_vpn(pcapdroid_t *pd) {
     new_dns_server = 0;
 
     if(pd->socks5.enabled) {
-        zdtun_ip_t dnatip = {0};
-        dnatip.ip4 = pd->socks5.proxy_ip;
-        zdtun_set_socks5_proxy(zdt, &dnatip, pd->socks5.proxy_port, 4);
+        zdtun_set_socks5_proxy(zdt, &pd->socks5.proxy_ip, pd->socks5.proxy_port, pd->socks5.proxy_ipver);
 
         if(pd->socks5.proxy_user[0] && pd->socks5.proxy_pass[0])
             zdtun_set_socks5_userpass(zdt, pd->socks5.proxy_user, pd->socks5.proxy_pass);
@@ -485,6 +469,8 @@ int run_vpn(pcapdroid_t *pd) {
     next_purge_ms = pd->now_ms + PERIODIC_PURGE_TIMEOUT_MS;
 
     log_i("Starting packet loop");
+    if(pd->cb.notify_service_status && running)
+        pd->cb.notify_service_status(pd, "started");
 
     while(running) {
         int max_fd;
@@ -569,18 +555,20 @@ int run_vpn(pcapdroid_t *pd) {
 
                 // To be run before pd_process_packet/process_payload
                 if(data->sent_pkts == 0) {
-                    if(pd_check_port_map(conn))
-                        /* port mapping applied */;
+                    if(pd_check_port_map(conn, data->uid))
+                        data->port_mapping_applied = true;
                     else if(should_proxify(pd, tuple, data)) {
                         zdtun_conn_proxy(conn);
                         data->proxied = true;
                     }
                 }
 
-                pd_process_packet(pd, &pkt, true, tuple, data, get_pkt_timestamp(pd, &tv), &pctx);
+                pd_init_pkt_context(&pctx, &pkt, true, tuple, data, get_pkt_timestamp(pd, &tv));
+                pd_process_packet(pd, &pctx);
                 if(data->sent_pkts == 0) {
                     // Newly created connections
-                    data->blacklisted_internal |= !check_dns_req_allowed(pd, conn, &pctx);
+                    if (!data->port_mapping_applied)
+                        data->blacklisted_internal |= !check_dns_req_allowed(pd, conn, &pctx);
                     data->to_block |= data->blacklisted_internal;
 
                     if(data->to_block) {
@@ -630,14 +618,16 @@ int run_vpn(pcapdroid_t *pd) {
                         socket_t sock = zdtun_conn_get_socket(conn);
 
                         // In SOCKS5 with the MitmReceiver, we need the local port to the SOCKS5 proxy
-                        if((sock != INVALID_SOCKET) && (tuple->ipver == 4)) {
-                            // NOTE: the zdtun SOCKS5 implementation only supports IPv4 right now.
-                            // If it also supported IPv6, than we would need to expose "sock_ipver"
-                            struct sockaddr_in local_addr;
+                        if(sock != INVALID_SOCKET) {
+                            struct sockaddr_storage local_addr;
                             socklen_t addrlen = sizeof(local_addr);
 
-                            if(getsockname(sock, (struct sockaddr*) &local_addr, &addrlen) == 0)
-                                data->vpn.local_port = local_addr.sin_port;
+                            if(getsockname(sock, (struct sockaddr*) &local_addr, &addrlen) == 0) {
+                                if(local_addr.ss_family == AF_INET6)
+                                    data->vpn.local_port = ((struct sockaddr_in6*) &local_addr)->sin6_port;
+                                else
+                                    data->vpn.local_port = ((struct sockaddr_in*) &local_addr)->sin_port;
+                            }
                         }
                     }
                 }
@@ -666,7 +656,6 @@ int run_vpn(pcapdroid_t *pd) {
 
 #if ANDROID
     destroy_uid_resolver(pd->vpn.resolver);
-    blacklist_destroy(pd->vpn.known_dns_servers);
 #endif
 
     return(0);

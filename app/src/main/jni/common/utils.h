@@ -55,6 +55,7 @@ extern void (*logcallback)(int lvl, const char *msg);
 #define log_e(...) log_android(ANDROID_LOG_ERROR, __VA_ARGS__)
 #define log_f(...) log_android(ANDROID_LOG_FATAL, __VA_ARGS__)
 
+void set_log_level(int lvl);
 void log_android(int lvl, const char *fmt, ...);
 ssize_t xwrite(int fd, const void *buf, size_t count);
 ssize_t xread(int fd, void *buf, size_t count);
@@ -63,6 +64,7 @@ void tupleSwapPeers(zdtun_5tuple_t *tuple);
 char loglvl2char(int lvl);
 char* humanSize(char *buf, int bufsize, double bytes);
 void hexdump(const char *buf, size_t bufsize);
+int start_subprocess(const char *prog, const char *args, bool as_root, int* out_fd);
 int run_shell_cmd(const char *prog, const char *args, bool as_root, bool check_error);
 
 #endif // __LOG_UTILS_H__

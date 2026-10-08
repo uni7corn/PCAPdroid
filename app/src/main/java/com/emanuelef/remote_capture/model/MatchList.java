@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.model;
@@ -25,11 +25,13 @@ import android.graphics.Typeface;
 import android.text.style.StyleSpan;
 import android.util.ArrayMap;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.collection.ArraySet;
 import androidx.preference.PreferenceManager;
 
 import com.emanuelef.remote_capture.AppsResolver;
+import com.emanuelef.remote_capture.Cidr;
 import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.R;
 import com.emanuelef.remote_capture.Utils;
@@ -45,6 +47,8 @@ import com.google.gson.JsonSerializer;
 import com.google.gson.JsonSyntaxException;
 
 import java.lang.reflect.Type;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -60,6 +64,8 @@ public class MatchList {
     private final ArrayList<Rule> mRules = new ArrayList<>();
     private final ArrayMap<String, Rule> mMatches = new ArrayMap<>();
     private final ArraySet<Integer> mUids = new ArraySet<>();
+    private final ArrayList<Cidr> mCidrs = new ArrayList<>();
+    private final ArrayMap<String, Integer> mPackageToUid = new ArrayMap<>();
     private final AppsResolver mResolver;
     private boolean mMigration = false;
 
@@ -76,7 +82,7 @@ public class MatchList {
         private final RuleType mType;
         private final Object mValue;
 
-        private Rule(RuleType tp, Object value) {
+        Rule(RuleType tp, Object value) {
             mLabel = MatchList.getRuleLabel(mContext, tp, value.toString());
             mType = tp;
             mValue = value;
@@ -96,10 +102,9 @@ public class MatchList {
 
         @Override
         public boolean equals(@Nullable Object obj) {
-            if(!(obj instanceof Rule))
+            if(!(obj instanceof Rule other))
                 return super.equals(obj);
 
-            Rule other = (Rule) obj;
             return((mType == other.mType) && (mValue.equals(other.mValue)));
         }
     }
@@ -108,21 +113,45 @@ public class MatchList {
         void onListChanged();
     }
 
+    // Accessed by JNI (see blacklist.c)
     public static class ListDescriptor {
         public final List<String> apps = new ArrayList<>();
         public final List<String> hosts = new ArrayList<>();
         public final List<String> ips = new ArrayList<>();
+        public final List<String> countries = new ArrayList<>();
+
+        // The uid this allowlist applies to; only set on the nested descriptors in allowlists.
+        public int uid = Utils.UID_NO_FILTER;
+        public final List<ListDescriptor> allowlists = new ArrayList<>();
     }
 
-    public MatchList(Context ctx, String pref_name) {
+    public MatchList(Context ctx, @NonNull String pref_name) {
         mContext = ctx;
-        mPrefName = pref_name; // The preference to bake the list rules
+        mPrefName = pref_name; // The preference to bake the list rules, empty if not baked
         mPrefs = PreferenceManager.getDefaultSharedPreferences(ctx);
         mResolver = new AppsResolver(ctx);
-        reload();
+    }
+
+    // Builds a list and loads its persisted rules. reload() is intentionally not called from the
+    // constructor: it would run before subclass fields are initialized.
+    public static MatchList load(Context ctx, @NonNull String pref_name) {
+        MatchList list = new MatchList(ctx, pref_name);
+        list.reload();
+        return list;
+    }
+
+    protected Context getContext() {
+        return mContext;
+    }
+
+    protected Integer getAppUid(String pkg) {
+        return mPackageToUid.get(pkg);
     }
 
     public void reload() {
+        if (mPrefName.isEmpty())
+            return;
+
         String serialized = mPrefs.getString(mPrefName, "");
         //Log.d(TAG, serialized);
 
@@ -139,6 +168,9 @@ public class MatchList {
     }
 
     public void save() {
+        if (mPrefName.isEmpty())
+            return;
+
         mPrefs.edit()
                 .putString(mPrefName, toJson(false))
                 .apply();
@@ -170,6 +202,10 @@ public class MatchList {
         return Utils.formatTextValue(ctx, null, italic, resid, value).toString();
     }
 
+    public static String getCidrLabel(Context ctx, Cidr cidr) {
+        return Utils.formatTextValue(ctx, null, italic, R.string.cidr_val, cidr.toString()).toString();
+    }
+
     private static class Serializer implements JsonSerializer<MatchList> {
         @Override
         public JsonElement serialize(MatchList src, Type typeOfSrc, JsonSerializationContext context) {
@@ -181,6 +217,10 @@ public class MatchList {
 
                 ruleObject.add("type", new JsonPrimitive(rule.getType().name()));
                 ruleObject.add("value", new JsonPrimitive(rule.getValue().toString()));
+
+                JsonArray allowlistArr = src.serializeAllowlist(rule);
+                if(allowlistArr != null)
+                    ruleObject.add("allowlist", allowlistArr);
 
                 rulesArr.add(ruleObject);
             }
@@ -201,9 +241,19 @@ public class MatchList {
             clear(false);
 
             for(JsonElement el: ruleArray) {
+                if(!el.isJsonObject()) {
+                    Log.w(TAG, "Skipping invalid rule: " + el);
+                    continue;
+                }
+
                 JsonObject ruleObj = el.getAsJsonObject();
-                String typeStr = ruleObj.get("type").getAsString();
-                String val = ruleObj.get("value").getAsString();
+                String typeStr = getPrimitiveString(ruleObj, "type");
+                String val = getPrimitiveString(ruleObj, "value");
+                if((typeStr == null) || (val == null)) {
+                    Log.w(TAG, "Skipping invalid rule: " + el);
+                    continue;
+                }
+
                 RuleType type;
 
                 try {
@@ -218,6 +268,11 @@ public class MatchList {
                         e.printStackTrace();
                         continue;
                     }
+                }
+
+                if(!isValidRuleValue(type, val)) {
+                    Log.w(TAG, "Skipping invalid rule: " + el);
+                    continue;
                 }
 
                 if(type == RuleType.APP) {
@@ -249,8 +304,11 @@ public class MatchList {
                     }
                 }
 
-                if(addRule(new Rule(type, val), false)) {
+                Rule rule = new Rule(type, val);
+                if(addRule(rule, false)) {
                     num_rules += 1;
+
+                    deserializeAllowlist(rule, ruleObj);
 
                     if((max_rules > 0) && (num_rules >= max_rules))
                         break;
@@ -301,7 +359,37 @@ public class MatchList {
         return tp + "@" + val;
     }
 
-    private boolean addRule(Rule rule, boolean notify) {
+    private boolean addCidr(String cidr_str) {
+        Cidr cidr;
+        try {
+            cidr = new Cidr(cidr_str);
+        } catch (UnknownHostException | IllegalArgumentException e) {
+            return false;
+        }
+
+        // check if already exists
+        for (Cidr test: mCidrs) {
+            if (test.equals(cidr)) {
+                return false;
+            }
+        }
+
+        mCidrs.add(cidr);
+        return true;
+    }
+
+    private boolean removeCidr(String cidr_str) {
+        Cidr cidr;
+        try {
+            cidr = new Cidr(cidr_str);
+        } catch (UnknownHostException | IllegalArgumentException e) {
+            return false;
+        }
+
+        return mCidrs.remove(cidr);
+    }
+
+    boolean addRule(Rule rule, boolean notify) {
         String value = rule.getValue().toString();
         String key = matchKey(rule.getType(), value);
 
@@ -314,7 +402,14 @@ public class MatchList {
             if(uid == Utils.UID_NO_FILTER)
                 return false;
 
+            mPackageToUid.put(value, uid);
             mUids.add(uid);
+        } else if (rule.getType() == RuleType.IP) {
+            // Check if CIDR
+            if (value.indexOf('/') >= 0) {
+                if (!addCidr(value))
+                    return false;
+            }
         }
 
         mRules.add(rule);
@@ -344,6 +439,17 @@ public class MatchList {
         return num_added;
     }
 
+    protected @Nullable JsonArray serializeAllowlist(Rule rule) {
+        return null;
+    }
+
+    protected void deserializeAllowlist(Rule rule, JsonObject ruleObj) {}
+
+    /* Create an empty, non-persistent list of the same kind */
+    public MatchList newEmptyList() {
+        return new MatchList(mContext, "");
+    }
+
     public void removeRule(Rule rule) {
         String val = rule.getValue().toString();
         String key = matchKey(rule.getType(), val);
@@ -352,10 +458,14 @@ public class MatchList {
 
         if(rule.getType() == RuleType.APP) {
             int uid = mResolver.getUid(val);
-            if(uid != Utils.UID_NO_FILTER)
+            if(uid != Utils.UID_NO_FILTER) {
+                mPackageToUid.remove(val);
                 mUids.remove(uid);
-            else
+            } else
                 Log.w(TAG, "removeRule: no uid found for package " + val);
+        } else if (rule.getType() == RuleType.IP) {
+            if ((val.indexOf('/') >= 0) && !removeCidr(val))
+                Log.w(TAG, "removeRule: removing CIDR failed for " + val);
         }
 
         if(removed)
@@ -367,8 +477,27 @@ public class MatchList {
         return mUids.contains(uid);
     }
 
-    public boolean matchesIP(String ip) {
+    public boolean matchesExactIP(String ip) {
         return mMatches.containsKey(matchKey(RuleType.IP, ip));
+    }
+
+    public Cidr matchesCidr(String ip) {
+        if (!mCidrs.isEmpty()) {
+            InetAddress address;
+
+            try {
+                address = InetAddress.getByName(ip);
+            } catch (UnknownHostException ignored) {
+                return null;
+            }
+
+            for (Cidr cidr : mCidrs) {
+                if (cidr.isInRange(address))
+                    return cidr;
+            }
+        }
+
+        return null;
     }
 
     public boolean matchesProto(String l7proto) {
@@ -403,7 +532,8 @@ public class MatchList {
 
         boolean hasInfo = ((conn.info != null) && (!conn.info.isEmpty()));
         return(matchesApp(conn.uid) ||
-                matchesIP(conn.dst_ip) ||
+                matchesExactIP(conn.dst_ip) ||
+                (matchesCidr(conn.dst_ip) != null) ||
                 matchesProto(conn.l7proto) ||
                 matchesCountry(conn.country) ||
                 (hasInfo && matchesHost(conn.info)));
@@ -417,7 +547,9 @@ public class MatchList {
         boolean hasRules = mRules.size() > 0;
         mRules.clear();
         mMatches.clear();
+        mPackageToUid.clear();
         mUids.clear();
+        mCidrs.clear();
 
         if(notify && hasRules)
             notifyListeners();
@@ -428,7 +560,7 @@ public class MatchList {
     }
 
     public boolean isEmpty() {
-        return(mRules.size() == 0);
+        return(mRules.isEmpty());
     }
 
     public int getSize() {
@@ -464,13 +596,28 @@ public class MatchList {
         return fromJson(json_str, -1);
     }
 
+    protected static @Nullable String getPrimitiveString(JsonObject obj, String member) {
+        JsonElement el = obj.get(member);
+        return ((el != null) && el.isJsonPrimitive()) ? el.getAsString() : null;
+    }
+
+    /* An invalid IP rule would make the whole native list fail to load, and Cidr would resolve a
+     * hostname on the calling thread (NetworkOnMainThreadException) */
+    protected static boolean isValidRuleValue(RuleType type, String val) {
+        switch(type) {
+            case IP:        return Utils.validateCidr(val);
+            case COUNTRY:   return (val.length() == 2);
+            default:        return true;
+        }
+    }
+
     // can be used by a subclass to exempt specific app (e.g. Blocklist grace apps)
     protected boolean isExemptedApp(int uid) {
         return false;
     }
 
     /* Convert the MatchList into a ListDescriptor, which can be then loaded by JNI.
-     * Only the following RuleTypes are supported: APP, IP, HOST.
+     * Only the following RuleTypes are supported: APP, IP, HOST, COUNTRY.
      */
     public ListDescriptor toListDescriptor() {
         final ListDescriptor rv = new ListDescriptor();
@@ -485,6 +632,8 @@ public class MatchList {
                 rv.hosts.add(val);
             else if(tp.equals(MatchList.RuleType.IP))
                 rv.ips.add(val);
+            else if(tp.equals(MatchList.RuleType.COUNTRY))
+                rv.countries.add(val);
             else if(!tp.equals(MatchList.RuleType.APP)) // apps handled below
                 Log.w(TAG, "ListDescriptor does not support RuleType " + tp.name());
         }
@@ -509,5 +658,38 @@ public class MatchList {
     private void notifyListeners() {
         for(ListChangeListener listener: mListeners)
             listener.onListChanged();
+    }
+
+    /* Call this whenever a package name -> uid mapping may have changed.
+     * True is returned when the mapping has been updated. In such a case,
+     * the caller must reload any native rules based on this MatchList. */
+    public boolean uidMappingChanged(String pkg) {
+        if(!mMatches.containsKey(matchKey(RuleType.APP, pkg)))
+            return false;
+
+        boolean changed = false;
+        Integer old_uid = mPackageToUid.get(pkg);
+        AppDescriptor app = mResolver.getAppByPackage(pkg, 0);
+
+        if((old_uid != null) && ((app == null) || (app.getUid() != old_uid))) {
+            Log.i(TAG, "Remove old UID mapping of " + pkg + ": " + old_uid);
+
+            mPackageToUid.remove(pkg);
+            mUids.remove(old_uid);
+            changed = true;
+
+            old_uid = null; // possibly add the new UID mapping below
+        }
+
+        if((old_uid == null) && (app != null)) {
+            int new_uid = app.getUid();
+            Log.i(TAG, "Add UID mapping of " + pkg + ": " + new_uid);
+
+            mPackageToUid.put(pkg, new_uid);
+            mUids.add(new_uid);
+            changed = true;
+        }
+
+        return changed;
     }
 }

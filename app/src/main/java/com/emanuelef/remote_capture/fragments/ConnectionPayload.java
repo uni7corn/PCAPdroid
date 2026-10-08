@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-22 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.fragments;
@@ -23,9 +23,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
@@ -33,34 +30,35 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
-import androidx.core.view.MenuProvider;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.Lifecycle;
 import androidx.preference.PreferenceManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.emanuelef.remote_capture.CaptureService;
 import com.emanuelef.remote_capture.ConnectionsRegister;
 import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.R;
 import com.emanuelef.remote_capture.Utils;
-import com.emanuelef.remote_capture.activities.ConnectionDetailsActivity;
 import com.emanuelef.remote_capture.adapters.PayloadAdapter;
+import com.emanuelef.remote_capture.interfaces.PayloadHostActivity;
 import com.emanuelef.remote_capture.model.ConnectionDescriptor;
 import com.emanuelef.remote_capture.model.PayloadChunk;
 import com.emanuelef.remote_capture.model.Prefs;
 import com.emanuelef.remote_capture.views.EmptyRecyclerView;
 
-public class ConnectionPayload extends Fragment implements ConnectionDetailsActivity.ConnUpdateListener, MenuProvider {
+public class ConnectionPayload extends Fragment implements PayloadHostActivity.ConnUpdateListener {
     private static final String TAG = "ConnectionPayload";
-    private ConnectionDetailsActivity mActivity;
+    private PayloadHostActivity mActivity;
     private ConnectionDescriptor mConn;
     private PayloadAdapter mAdapter;
     private TextView mTruncatedWarning;
     private EmptyRecyclerView mRecyclerView;
     private int mCurChunks;
-    private Menu mMenu;
-    private boolean mJustCreated;
     private boolean mShowAsPrintable;
+    private WindowInsetsCompat mInsets;
 
     public static ConnectionPayload newInstance(PayloadChunk.ChunkType mode, int conn_id) {
         ConnectionPayload fragment = new ConnectionPayload();
@@ -74,8 +72,11 @@ public class ConnectionPayload extends Fragment implements ConnectionDetailsActi
     @Override
     public void onAttach(@NonNull Context context) {
         super.onAttach(context);
-        mActivity = (ConnectionDetailsActivity) context;
+        mActivity = (PayloadHostActivity) context;
         mActivity.addConnUpdateListener(this);
+
+        if (mAdapter != null)
+            mAdapter.setExportPayloadHandler(mActivity);
     }
 
     @Override
@@ -83,12 +84,14 @@ public class ConnectionPayload extends Fragment implements ConnectionDetailsActi
         super.onDetach();
         mActivity.removeConnUpdateListener(this);
         mActivity = null;
+
+        if (mAdapter != null)
+            mAdapter.setExportPayloadHandler(null);
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
-        requireActivity().addMenuProvider(this, getViewLifecycleOwner(), Lifecycle.State.RESUMED);
         return inflater.inflate(R.layout.connection_payload, container, false);
     }
 
@@ -104,26 +107,53 @@ public class ConnectionPayload extends Fragment implements ConnectionDetailsActi
         mConn = reg.getConnById(args.getInt("conn_id"));
         if(mConn == null) {
             Utils.showToast(requireContext(), R.string.connection_not_found);
-            mActivity.finish();
+            requireActivity().finish();
             return;
         }
 
         mRecyclerView = view.findViewById(R.id.payload);
-        EmptyRecyclerView.MyLinearLayoutManager layoutMan = new EmptyRecyclerView.MyLinearLayoutManager(requireContext());
+        EmptyRecyclerView.MyLinearLayoutManager layoutMan = new EmptyRecyclerView.MyLinearLayoutManager(requireContext()) {
+            // Bind the chunks off-screen, so that they grow after being loaded asynchronously before becoming visible.
+            // Otherwise, when scrolling up, a growing chunk becomes the layout anchor and pushes the visible items down
+            @Override
+            protected void calculateExtraLayoutSpace(@NonNull RecyclerView.State state, @NonNull int[] extraLayoutSpace) {
+                int extra = getHeight();
+                extraLayoutSpace[0] = extra;
+                extraLayoutSpace[1] = extra;
+            }
+        };
         mRecyclerView.setLayoutManager(layoutMan);
 
         mTruncatedWarning = view.findViewById(R.id.truncated_warning);
         mTruncatedWarning.setText(String.format(getString(R.string.payload_truncated), getString(R.string.full_payload)));
-        if(mConn.isPayloadTruncated())
+        if(mConn.isPayloadTruncated()) {
             mTruncatedWarning.setVisibility(View.VISIBLE);
+        }
+
+        // Allow interactions with the last item
+        ViewCompat.setOnApplyWindowInsetsListener(mRecyclerView, (v, windowInsets) -> {
+            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                    WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(0, 0, 0, insets.bottom);
+
+            return WindowInsetsCompat.CONSUMED;
+        });
+        mRecyclerView.setClipToPadding(false);
+
+        ViewCompat.setOnApplyWindowInsetsListener(mTruncatedWarning, (v, windowInsets) -> {
+            if(mConn.isPayloadTruncated()) {
+                applyTruncatedWarningInsets(windowInsets);
+                return WindowInsetsCompat.CONSUMED;
+            } else {
+                mInsets = windowInsets;
+                return windowInsets;
+            }
+        });
 
         mCurChunks = mConn.getNumPayloadChunks();
-        if(mCurChunks > 0)
-            mShowAsPrintable = guessDisplayAsPrintable();
-        else
-            mShowAsPrintable = false;
+        mShowAsPrintable = mActivity.getDisplayMode(this);
         mAdapter = new PayloadAdapter(requireContext(), mConn, mode, mShowAsPrintable);
-        mJustCreated = true;
+        mAdapter.setExportPayloadHandler(mActivity);
 
         // only set adapter after acknowledged (see setMenuVisibility below)
         if(payloadNoticeAcknowledged(PreferenceManager.getDefaultSharedPreferences(requireContext())))
@@ -131,10 +161,32 @@ public class ConnectionPayload extends Fragment implements ConnectionDetailsActi
     }
 
     @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+
+        if(mAdapter != null) {
+            mAdapter.destroy();
+            mAdapter = null;
+        }
+    }
+
+    private void applyTruncatedWarningInsets(WindowInsetsCompat windowInsets) {
+        Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                WindowInsetsCompat.Type.displayCutout());
+        ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) mTruncatedWarning.getLayoutParams();
+        mlp.bottomMargin = insets.bottom;
+        mTruncatedWarning.setLayoutParams(mlp);
+    }
+
+    @Override
     public void setMenuVisibility(boolean menuVisible) {
         super.setMenuVisibility(menuVisible);
+
+        Context context = getContext();
+        if(context == null)
+            return;
+
         Log.d(TAG, "setMenuVisibility : " + menuVisible);
-        Context context = requireContext();
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
 
         if(menuVisible && !payloadNoticeAcknowledged(prefs)) {
@@ -144,100 +196,61 @@ public class ConnectionPayload extends Fragment implements ConnectionDetailsActi
                     .setOnCancelListener((d) -> requireActivity().finish())
                     .setNegativeButton(R.string.cancel_action, (d, b) -> requireActivity().finish())
                     .setPositiveButton(R.string.show_data_action, (d, whichButton) -> {
-                        // show the data
                         mRecyclerView.setAdapter(mAdapter);
-
                         prefs.edit().putBoolean(Prefs.PREF_PAYLOAD_NOTICE_ACK, true).apply();
                     }).show();
 
             dialog.setCanceledOnTouchOutside(false);
         }
+
+        if(menuVisible && (mActivity != null) && (mConn != null))
+            mActivity.updateMenuVisibility();
     }
 
     private boolean payloadNoticeAcknowledged(SharedPreferences prefs) {
         return prefs.getBoolean(Prefs.PREF_PAYLOAD_NOTICE_ACK, false);
     }
 
-    @Override
-    public void onCreateMenu(@NonNull Menu menu, MenuInflater menuInflater) {
-        menuInflater.inflate(R.menu.connection_payload, menu);
-        mMenu = menu;
-        if((mCurChunks > 0) && mJustCreated) {
-            mShowAsPrintable = guessDisplayAsPrintable();
-            mAdapter.setDisplayAsPrintableText(mShowAsPrintable);
-            mJustCreated = false;
-        }
-        refreshDisplayMode();
+    public void setDisplayMode(boolean showAsPrintable) {
+        mShowAsPrintable = showAsPrintable;
+
+        if (mAdapter != null)
+            mAdapter.setDisplayAsPrintableText(showAsPrintable);
     }
 
-    @Override
-    public boolean onMenuItemSelected(@NonNull MenuItem item) {
-        int id = item.getItemId();
+    public boolean guessDisplayAsPrintable() {
+        if (mConn == null)
+            return false;
 
-        if(id == R.id.printable_text) {
-            mShowAsPrintable = true;
-            mAdapter.setDisplayAsPrintableText(true);
-            refreshDisplayMode();
-            return true;
-        } else if(id == R.id.hexdump) {
-            mShowAsPrintable = false;
-            mAdapter.setDisplayAsPrintableText(false);
-            refreshDisplayMode();
-            return true;
-        }
-
-        return false;
-    }
-
-    private boolean guessDisplayAsPrintable() {
         // try to determine the best mode based on the current payload
         if(mConn.getNumPayloadChunks() == 0)
             return mConn.l7proto.equals("HTTPS");
 
-        PayloadChunk firstChunk = mConn.getPayloadChunk(0);
-        if((firstChunk == null) || (firstChunk.type == PayloadChunk.ChunkType.HTTP))
+        if(mConn.getChunkType(0) == PayloadChunk.ChunkType.HTTP)
             return true;
 
         // guess based on the actual data
-        int maxLen = Math.min(firstChunk.payload.length, 16);
-        for(int i=0; i<maxLen; i++) {
-            if(!Utils.isPrintable(firstChunk.payload[i]))
-                return false;
-        }
-
-        return true;
-    }
-
-    private void refreshDisplayMode() {
-        if(mMenu == null)
-            return;
-
-        MenuItem printableText = mMenu.findItem(R.id.printable_text);
-        MenuItem hexdump = mMenu.findItem(R.id.hexdump);
-
-        // important: the checked item must first be unchecked
-        if(mShowAsPrintable) {
-            hexdump.setChecked(false);
-            printableText.setChecked(true);
-        } else {
-            printableText.setChecked(false);
-            hexdump.setChecked(true);
-        }
+        return mConn.isFirstChunkPrintable();
     }
 
     @Override
     public void connectionUpdated() {
-        if(mCurChunks == 0) {
-            mShowAsPrintable = guessDisplayAsPrintable();
-            mAdapter.setDisplayAsPrintableText(mShowAsPrintable);
+        if((mCurChunks == 0) && (mActivity != null)) {
+            mActivity.updateMenuVisibility();
         }
 
         if(mConn.getNumPayloadChunks() > mCurChunks) {
-            mAdapter.handleChunksAdded(mConn.getNumPayloadChunks());
+            if (mAdapter != null)
+                mAdapter.handleChunksAdded(mConn.getNumPayloadChunks());
+
             mCurChunks = mConn.getNumPayloadChunks();
         }
 
-        if(mConn.isPayloadTruncated() && (mTruncatedWarning != null))
+        if(mConn.isPayloadTruncated() && (mTruncatedWarning != null)) {
             mTruncatedWarning.setVisibility(View.VISIBLE);
+
+            if (mInsets != null)
+                applyTruncatedWarningInsets(mInsets);
+        }
     }
 }

@@ -1,13 +1,36 @@
+/*
+ * This file is part of PCAPdroid.
+ *
+ * PCAPdroid is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * PCAPdroid is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Copyright 2022-26 - Emanuele Faranda
+ */
+
 package com.emanuelef.remote_capture.model;
 
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import androidx.annotation.Nullable;
 import androidx.preference.PreferenceManager;
 
+import com.emanuelef.remote_capture.Log;
+import com.emanuelef.remote_capture.Utils;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
+import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 
 import java.lang.reflect.Type;
@@ -24,13 +47,14 @@ public class PortMapping {
         public final int ipproto;
         public final int orig_port;
         public final int redirect_port;
-        public final String redirect_ip;
+        @SerializedName("redirect_ip") // keep for backward compatibility
+        public final String redirect_host;
 
         public PortMap(int proto, int port, int r_port, String r_host) {
             ipproto = proto;
             orig_port = port;
             redirect_port = r_port;
-            redirect_ip = r_host;
+            redirect_host = r_host;
         }
 
         @Override
@@ -39,12 +63,12 @@ public class PortMapping {
             if (o == null || getClass() != o.getClass()) return false;
             PortMap portMap = (PortMap) o;
             return ipproto == portMap.ipproto && orig_port == portMap.orig_port &&
-                    redirect_port == portMap.redirect_port && redirect_ip.equals(portMap.redirect_ip);
+                    redirect_port == portMap.redirect_port && redirect_host.equals(portMap.redirect_host);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(ipproto, orig_port, redirect_port, redirect_ip);
+            return Objects.hash(ipproto, orig_port, redirect_port, redirect_host);
         }
     }
 
@@ -72,15 +96,43 @@ public class PortMapping {
     }
 
     public boolean fromJson(String json_str) {
+        ArrayList<PortMap> mapping = parse(json_str);
+        if(mapping == null)
+            return false;
+
+        mMapping = mapping;
+        return true;
+    }
+
+    /* Returns null if the mapping cannot be parsed. Invalid entries are skipped */
+    private static @Nullable ArrayList<PortMap> parse(String json_str) {
+        ArrayList<PortMap> mapping;
+
         try {
             Type listOfMyClassObject = new TypeToken<ArrayList<PortMap>>() {}.getType();
             Gson gson = new Gson();
-            mMapping = gson.fromJson(json_str, listOfMyClassObject);
-            return true;
+            mapping = gson.fromJson(json_str, listOfMyClassObject);
         } catch (JsonParseException e) {
             e.printStackTrace();
-            return false;
+            return null;
         }
+
+        if(mapping == null)
+            return null;
+
+        Iterator<PortMap> it = mapping.iterator();
+        while(it.hasNext()) {
+            PortMap map = it.next();
+
+            if((map == null) || (map.redirect_host == null) || !Utils.validateHostOrIp(map.redirect_host) ||
+                    ((map.ipproto != 6) && (map.ipproto != 17)) ||
+                    !Utils.validatePort(map.orig_port) || !Utils.validatePort(map.redirect_port)) {
+                Log.w(TAG, "Skipping invalid port mapping");
+                it.remove();
+            }
+        }
+
+        return mapping;
     }
 
     public String toJson(boolean pretty_print) {

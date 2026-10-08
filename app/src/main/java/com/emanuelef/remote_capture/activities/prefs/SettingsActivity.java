@@ -14,21 +14,31 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.activities.prefs;
 
+import android.app.LocaleManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.LocaleList;
+import android.provider.Settings;
 import android.text.InputType;
+import android.util.AttributeSet;
+import android.view.View;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
@@ -44,12 +54,14 @@ import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.PCAPdroid;
 import com.emanuelef.remote_capture.Utils;
 import com.emanuelef.remote_capture.MitmAddon;
+import com.emanuelef.remote_capture.VpnReconnectService;
 import com.emanuelef.remote_capture.activities.BaseActivity;
 import com.emanuelef.remote_capture.activities.MainActivity;
 import com.emanuelef.remote_capture.activities.MitmSetupWizard;
 import com.emanuelef.remote_capture.fragments.prefs.DnsSettings;
 import com.emanuelef.remote_capture.fragments.prefs.GeoipSettings;
 import com.emanuelef.remote_capture.fragments.prefs.Socks5Settings;
+import com.emanuelef.remote_capture.interfaces.FragmentViewCreatedListener;
 import com.emanuelef.remote_capture.model.Prefs;
 import com.emanuelef.remote_capture.R;
 
@@ -57,25 +69,66 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.Locale;
 
-public class SettingsActivity extends BaseActivity implements PreferenceFragmentCompat.OnPreferenceStartFragmentCallback, FragmentManager.OnBackStackChangedListener {
+public class SettingsActivity extends BaseActivity implements PreferenceFragmentCompat.OnPreferenceStartFragmentCallback,
+        FragmentManager.OnBackStackChangedListener,
+        FragmentViewCreatedListener {
     private static final String TAG = "SettingsActivity";
     private static final String ACTION_LANG_RESTART = "lang_restart";
     public static final String TARGET_PREF_EXTRA = "target_pref";
+    private WindowInsetsCompat mInsets = null;
+    private OnBackPressedCallback mLangRestartCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setTitle(R.string.title_activity_settings); // note: setting via manifest does not honor custom locale
         displayBackAction();
-        setContentView(R.layout.settings_activity);
+        setContentView(R.layout.fragment_activity);
 
         getSupportFragmentManager()
                 .beginTransaction()
-                .replace(R.id.settings_container, new SettingsFragment(), "root")
+                .replace(R.id.fragment, new SettingsFragment(), "root")
                 .commit();
 
         getSupportFragmentManager().addOnBackStackChangedListener(this);
+
+        // After a locale change the parent activity stack is stale, so back must re-launch MainActivity.
+        // Only relevant while the root SettingsFragment is showing — nested settings fragments pop normally.
+        Intent intent = getIntent();
+        if ((intent != null) && ACTION_LANG_RESTART.equals(intent.getAction())) {
+            mLangRestartCallback = new OnBackPressedCallback(true) {
+                @Override
+                public void handleOnBackPressed() {
+                    Intent restart = new Intent(SettingsActivity.this, MainActivity.class);
+                    restart.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(restart);
+                    finish();
+                }
+            };
+            getOnBackPressedDispatcher().addCallback(this, mLangRestartCallback);
+        }
+    }
+
+    @Nullable
+    @Override
+    public View onCreateView(@Nullable View parent, @NonNull String name, @NonNull Context context, @NonNull AttributeSet attrs) {
+        View view = super.onCreateView(parent, name, context, attrs);
+        if (view != null)
+            ViewCompat.setOnApplyWindowInsetsListener(view, (v, windowInsets) -> {
+                mInsets = windowInsets;
+                return windowInsets;
+            });
+
+        return view;
+    }
+
+    @Override
+    public void onFragmentViewCreated(@NonNull View view) {
+        // necessary, otherwise insets are not dispatched after fragment replace
+        if (mInsets != null)
+            ViewCompat.dispatchApplyWindowInsets(view, mInsets);
     }
 
     @Override
@@ -99,7 +152,7 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
         if(targetFragment != null) {
             getSupportFragmentManager()
                     .beginTransaction()
-                    .replace(R.id.settings_container, targetFragment, pref.getKey())
+                    .replace(R.id.fragment, targetFragment, pref.getKey())
                     .setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN)
                     .addToBackStack(pref.getKey())
                     .commit();
@@ -111,60 +164,58 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
 
     @Override
     public void onBackStackChanged() {
-        Fragment f = getSupportFragmentManager().findFragmentById(R.id.settings_container);
-        if(f instanceof SettingsFragment)
-            setTitle(R.string.title_activity_settings);
-    }
+        Fragment f = getSupportFragmentManager().findFragmentById(R.id.fragment);
+        boolean atRoot = f instanceof SettingsFragment;
 
-    @Override
-    public void onBackPressed() {
-        Fragment f = getSupportFragmentManager().findFragmentById(R.id.settings_container);
-        if(f instanceof SettingsFragment) {
-            // Use a custom intent to provide "up" navigation after ACTION_LANG_RESTART took place
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-            finish();
-        } else
-            super.onBackPressed();
+        if(atRoot) {
+            setTitle(R.string.title_activity_settings);
+
+            var view = f.getView();
+            if ((mInsets != null) && (view != null))
+                ViewCompat.dispatchApplyWindowInsets(view, mInsets);
+        }
+
+        if (mLangRestartCallback != null)
+            mLangRestartCallback.setEnabled(atRoot);
     }
 
     public static class SettingsFragment extends PreferenceFragmentCompat {
         private SwitchPreference mTlsDecryption;
-        private SwitchPreference mBlockQuic;
         private SwitchPreference mFullPayloadEnabled;
         private SwitchPreference mRootCaptureEnabled;
         private SwitchPreference mAutoBlockPrivateDNS;
         private EditTextPreference mMitmproxyOpts;
         private DropDownPreference mIpMode;
         private DropDownPreference mCapInterface;
+        private DropDownPreference mBlockQuic;
+        private DropDownPreference mConnectionsLogSize;
         private Preference mVpnExceptions;
         private Preference mSocks5Settings;
         private Preference mDnsSettings;
         private Preference mPortMapping;
         private Preference mMitmWizard;
         private SwitchPreference mMalwareDetectionEnabled;
-        private SwitchPreference mTrailerEnabled;
         private SwitchPreference mPcapngEnabled;
+        private SwitchPreference mDumpExtensions;
+        private SwitchPreference mRestartOnDisconnect;
         private Billing mIab;
+        private SettingsBackupHandler mBackupHandler;
         private boolean mHasStartedMitmWizard;
         private boolean mRootDecryptionNoticeShown = false;
-
-        private final ActivityResultLauncher<String> requestPermissionLauncher =
-                registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted ->
-                        Log.d(TAG, "Write permission " + (isGranted ? "granted" : "denied")));
 
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
             mIab = Billing.newInstance(requireContext());
+            mBackupHandler = new SettingsBackupHandler(this);
 
-            setupUdpExporterPrefs();
+            setupExporterPrefs();
             setupHttpServerPrefs();
             setupTrafficInspectionPrefs();
             setupCapturePrefs();
             setupSecurityPrefs();
             setupOtherPrefs();
+            setupBackupPrefs();
 
             socks5ProxyHideShow(mTlsDecryption.isChecked(), rootCaptureEnabled());
             mBlockQuic.setVisible(!rootCaptureEnabled());
@@ -176,6 +227,30 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
                 if(target_pref != null)
                     scrollToPreference(target_pref);
             }
+        }
+
+        @Override
+        public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+            super.onViewCreated(view, savedInstanceState);
+
+            ViewCompat.setOnApplyWindowInsetsListener(view, (v, windowInsets) -> {
+                Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                        WindowInsetsCompat.Type.displayCutout());
+                v.setPadding(insets.left, insets.top, insets.right, insets.bottom);
+
+                return WindowInsetsCompat.CONSUMED;
+            });
+        }
+
+        @Override
+        public boolean onPreferenceTreeClick(@NonNull Preference preference) {
+            Intent intent = preference.getIntent();
+            if(intent != null) {
+                Utils.startActivity(requireContext(), intent);
+                return true;
+            }
+
+            return super.onPreferenceTreeClick(preference);
         }
 
         @Override
@@ -198,10 +273,10 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
         }
 
         @SuppressWarnings("deprecation")
-        private void setupUdpExporterPrefs() {
-            /* Collector IP validation */
-            EditTextPreference mRemoteCollectorIp = requirePreference(Prefs.PREF_COLLECTOR_IP_KEY);
-            mRemoteCollectorIp.setOnPreferenceChangeListener((preference, newValue) -> Utils.validateIpAddress(newValue.toString()));
+        private void setupExporterPrefs() {
+            /* Collector host validation (IP address or domain name) */
+            EditTextPreference mRemoteCollectorHost = requirePreference(Prefs.PREF_COLLECTOR_HOST_KEY);
+            mRemoteCollectorHost.setOnPreferenceChangeListener((preference, newValue) -> Utils.validateHostOrIp(newValue.toString()));
 
             /* Collector port validation */
             EditTextPreference mRemoteCollectorPort = requirePreference(Prefs.PREF_COLLECTOR_PORT_KEY);
@@ -223,6 +298,11 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
             return mIab.isPurchased(Billing.PCAPNG_SKU) && mPcapngEnabled.isChecked();
         }
 
+        private void dumpExtensionsHideShow(boolean pcapngEnabled) {
+            // the PCAPdroid extensions are implicitly enabled with the pcapng format
+            mDumpExtensions.setVisible(!pcapngEnabled);
+        }
+
         private void refreshInterfaces() {
             ArrayList<String> labels = new ArrayList<>();
             ArrayList<String> values = new ArrayList<>();
@@ -233,7 +313,7 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
             values.add("any");
 
             try {
-                Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
+                Enumeration<NetworkInterface> ifaces = Utils.getNetworkInterfaces();
 
                 while (ifaces.hasMoreElements()) {
                     NetworkInterface iface = ifaces.nextElement();
@@ -260,11 +340,13 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
             if(Utils.isRootAvailable()) {
                 mRootCaptureEnabled.setOnPreferenceChangeListener((preference, newValue) -> {
                     rootCaptureHideShow((Boolean) newValue);
-                    checkDecrpytionWithRoot((Boolean) newValue, mTlsDecryption.isChecked());
-                    return true;
+                    return checkDecrpytionWithRoot((Boolean) newValue, mTlsDecryption.isChecked());
                 });
             } else
                 mRootCaptureEnabled.setVisible(false);
+
+            mRestartOnDisconnect = requirePreference(Prefs.PREF_RESTART_ON_DISCONNECT);
+            mRestartOnDisconnect.setVisible(VpnReconnectService.isAvailable());
 
             mDnsSettings = requirePreference("dns_settings");;
             mVpnExceptions = requirePreference(Prefs.PREF_VPN_EXCEPTIONS);
@@ -273,15 +355,12 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
                 startActivity(intent);
                 return true;
             });
-
-            mTrailerEnabled = requirePreference("pcapdroid_trailer");
-            mTrailerEnabled.setVisible(!isPcapngEnabled()); // TODO support
         }
 
         private void setupSecurityPrefs() {
             mMalwareDetectionEnabled = requirePreference(Prefs.PREF_MALWARE_DETECTION);
 
-            if(!mIab.isAvailable(Billing.MALWARE_DETECTION_SKU)) {
+            if(!mIab.isPurchased(Billing.MALWARE_DETECTION_SKU) && !mIab.isAvailable(Billing.MALWARE_DETECTION_SKU)) {
                 getPreferenceScreen().removePreference(requirePreference("security"));
                 return;
             }
@@ -294,39 +373,56 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
             mAutoBlockPrivateDNS = requirePreference("auto_block_private_dns");
 
             mTlsDecryption = requirePreference(Prefs.PREF_TLS_DECRYPTION_KEY);
-            mTlsDecryption.setOnPreferenceChangeListener((preference, newValue) -> {
-                boolean enabled = (boolean) newValue;
-                Context ctx = requireContext();
+            if(Utils.isPlaystore() && !MitmAddon.isInstalled(requireContext())) {
+                // the addon cannot be installed from the app, see InstallAddon
+                mTlsDecryption.setChecked(false);
+                mTlsDecryption.setVisible(false);
+            } else if(!MitmAddon.isSupportedTarget()) {
+                // The mitm addon dropped support for armv7/x86 and Android < 7
+                mTlsDecryption.setChecked(false);
+                mTlsDecryption.setEnabled(false);
+                mTlsDecryption.setSummary(R.string.tls_decryption_unsupported_target);
+            } else
+                mTlsDecryption.setOnPreferenceChangeListener((preference, newValue) -> {
+                    boolean enabled = (boolean) newValue;
+                    Context ctx = requireContext();
 
-                if(checkDecrpytionWithRoot(rootCaptureEnabled(), (boolean) newValue))
-                    return false;
+                    if(!checkDecrpytionWithRoot(rootCaptureEnabled(), (boolean) newValue))
+                        return false;
 
-                if(enabled && MitmAddon.needsSetup(ctx)) {
-                    mHasStartedMitmWizard = true;
-                    Intent intent = new Intent(ctx, MitmSetupWizard.class);
-                    startActivity(intent);
-                    return false;
-                }
+                    if(enabled && MitmAddon.needsSetup(ctx)) {
+                        mHasStartedMitmWizard = true;
+                        Intent intent = new Intent(ctx, MitmSetupWizard.class);
+                        startActivity(intent);
+                        return false;
+                    }
 
-                mMitmWizard.setVisible((boolean) newValue);
-                mMitmproxyOpts.setVisible((boolean) newValue);
-                socks5ProxyHideShow((boolean) newValue, rootCaptureEnabled());
-                return true;
-            });
+                    mMitmWizard.setVisible((boolean) newValue);
+                    mMitmproxyOpts.setVisible((boolean) newValue);
+                    socks5ProxyHideShow((boolean) newValue, rootCaptureEnabled());
+                    return true;
+                });
 
-            mPcapngEnabled = requirePreference("pcapng_format");
+            mPcapngEnabled = requirePreference(Prefs.PREF_PCAPNG_ENABLED);
+            mDumpExtensions = requirePreference(Prefs.PREF_DUMP_EXTENSIONS);
 
-            if(mIab.isAvailable(Billing.PCAPNG_SKU)) {
+            if(mIab.isPurchased(Billing.PCAPNG_SKU) || mIab.isAvailable(Billing.PCAPNG_SKU)) {
                 mPcapngEnabled.setOnPreferenceClickListener((preference -> {
                     // Billing code here
 
-                    mTrailerEnabled.setVisible(!mPcapngEnabled.isChecked());
                     return false;
                 }));
                 if(!mIab.isPurchased(Billing.PCAPNG_SKU))
                     mPcapngEnabled.setChecked(false);
             } else
                 mPcapngEnabled.setVisible(false);
+
+            mPcapngEnabled.setOnPreferenceChangeListener((preference, newValue) -> {
+                dumpExtensionsHideShow((boolean) newValue);
+                return true;
+            });
+
+            dumpExtensionsHideShow(isPcapngEnabled());
 
             mFullPayloadEnabled = requirePreference(Prefs.PREF_FULL_PAYLOAD);
             mBlockQuic = requirePreference(Prefs.PREF_BLOCK_QUIC);
@@ -342,41 +438,102 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
             });
 
             mSocks5Settings = requirePreference("socks5_settings");
+
+            setupConnectionsLogSizePref();
+        }
+
+        private void setupConnectionsLogSizePref() {
+            mConnectionsLogSize = requirePreference(Prefs.PREF_CONNECTIONS_LOG_SIZE);
+
+            int maxSupported = Prefs.getMaxConnectionsLogSize();
+            ArrayList<CharSequence> labels = new ArrayList<>();
+            ArrayList<CharSequence> values = new ArrayList<>();
+
+            for (int v = Prefs.MIN_CONNECTIONS_LOG_SIZE; v <= maxSupported; v <<= 1) {
+                int mb = (int) (((long) v * 2 /* KB per conn */) / 1024);
+                labels.add(getString(R.string.connections_log_size_entry, Integer.toString(v), mb));
+                values.add(Integer.toString(v));
+            }
+
+            mConnectionsLogSize.setEntries(labels.toArray(new CharSequence[0]));
+            mConnectionsLogSize.setEntryValues(values.toArray(new CharSequence[0]));
+
+            // Clamp the stored value if the device-supported max shrank (e.g. moved profile / smaller heap).
+            String current = mConnectionsLogSize.getValue();
+            if ((current == null) || !values.contains(current))
+                mConnectionsLogSize.setValue(Integer.toString(Prefs.getConnectionsLogSize(
+                        PreferenceManager.getDefaultSharedPreferences(requireContext()))));
         }
 
         private void socks5ProxyHideShow(boolean tlsDecryption, boolean rootEnabled) {
             mSocks5Settings.setVisible(!tlsDecryption && !rootEnabled);
         }
 
-        private void setupOtherPrefs() {
+        private void setupAppLanguagePref() {
             DropDownPreference appLang = requirePreference(Prefs.PREF_APP_LANGUAGE);
+            Preference appLangExternal = requirePreference("app_language_external");
 
-            if(SettingsActivity.ACTION_LANG_RESTART.equals(requireActivity().getIntent().getAction()))
-                scrollToPreference(appLang);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // On Android 33+, app language is configurable from the system settings
+                appLang.setVisible(false);
+                appLangExternal.setVisible(true);
 
-            // Current locale applied via BaseActivity.attachBaseContext
-            appLang.setOnPreferenceChangeListener((preference, newValue) -> {
-                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+                LocaleList locales = requireContext().getSystemService(LocaleManager.class)
+                        .getApplicationLocales();
+                if (locales.equals(LocaleList.getEmptyLocaleList()))
+                    appLangExternal.setSummary(getString(R.string.system_default));
+                else if (!locales.isEmpty())
+                    appLangExternal.setSummary(locales.get(0).getDisplayName());
 
-                if(prefs.edit().putString(Prefs.PREF_APP_LANGUAGE, newValue.toString()).commit()) {
-                    // Restart the activity to apply the language change
-                    Intent intent = new Intent(getContext(), SettingsActivity.class);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                    intent.setAction(SettingsActivity.ACTION_LANG_RESTART);
+                appLangExternal.setOnPreferenceClickListener(preference -> {
+                    Intent intent = new Intent(Settings.ACTION_APP_LOCALE_SETTINGS);
+                    intent.setData(Uri.fromParts("package", requireContext().getPackageName(), null));
                     startActivity(intent);
+                    return true;
+                });
+            } else {
+                // Populate supported languages dynamically from locales_config.xml
+                String[] supportedLocales = Utils.getSupportedLocales(requireContext());
+                String[] entryValues = new String[supportedLocales.length + 1];
+                CharSequence[] entryLabels = new CharSequence[supportedLocales.length + 1];
 
-                    Runtime.getRuntime().exit(0);
+                entryValues[0] = "system";
+                entryLabels[0] = getString(R.string.system_default);
+
+                for (int i = 0; i < supportedLocales.length; i++) {
+                    Locale locale = Locale.forLanguageTag(supportedLocales[i]);
+                    entryValues[i + 1] = supportedLocales[i];
+                    String name = locale.getDisplayName(locale);
+                    entryLabels[i + 1] = name.substring(0, 1).toUpperCase(locale) + name.substring(1);
                 }
 
-                return false;
-            });
+                appLang.setEntries(entryLabels);
+                appLang.setEntryValues(entryValues);
 
-            DropDownPreference appTheme = requirePreference(Prefs.PREF_APP_THEME);
-            appTheme.setOnPreferenceChangeListener((preference, newValue) -> {
-                Utils.setAppTheme(newValue.toString());
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
 
-                return true;
-            });
+                if (SettingsActivity.ACTION_LANG_RESTART.equals(requireActivity().getIntent().getAction()))
+                    scrollToPreference(appLang);
+
+                // Current locale applied via BaseActivity.attachBaseContext
+                appLang.setOnPreferenceChangeListener((preference, newValue) -> {
+                    if (prefs.edit().putString(Prefs.PREF_APP_LANGUAGE, newValue.toString()).commit()) {
+                        // Restart the activity to apply the language change
+                        Intent intent = new Intent(requireContext(), SettingsActivity.class);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                        intent.setAction(SettingsActivity.ACTION_LANG_RESTART);
+                        startActivity(intent);
+
+                        Runtime.getRuntime().exit(0);
+                    }
+
+                    return false;
+                });
+            }
+        }
+
+        private void setupOtherPrefs() {
+            setupAppLanguagePref();
 
             mPortMapping = requirePreference(Prefs.PREF_PORT_MAPPING);
             mPortMapping.setOnPreferenceClickListener(preference -> {
@@ -388,14 +545,25 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
             mIpMode = requirePreference(Prefs.PREF_IP_MODE);
 
             Preference ctrlPerm = requirePreference("control_permissions");
-            if(!PCAPdroid.getInstance().getCtrlPermissions().hasRules())
-                ctrlPerm.setVisible(false);
-            else
-                ctrlPerm.setOnPreferenceClickListener(preference -> {
-                    Intent intent = new Intent(requireContext(), EditCtrlPermissions.class);
-                    startActivity(intent);
-                    return true;
-                });
+            ctrlPerm.setOnPreferenceClickListener(preference -> {
+                Intent intent = new Intent(requireContext(), EditCtrlPermissions.class);
+                startActivity(intent);
+                return true;
+            });
+        }
+
+        private void setupBackupPrefs() {
+            Preference exportSettings = requirePreference("export_settings");
+            exportSettings.setOnPreferenceClickListener(preference -> {
+                mBackupHandler.startExport();
+                return true;
+            });
+
+            Preference importSettings = requirePreference("import_settings");
+            importSettings.setOnPreferenceClickListener(preference -> {
+                mBackupHandler.startImport();
+                return true;
+            });
         }
 
         private void rootCaptureHideShow(boolean enabled) {
@@ -409,6 +577,9 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
                 socks5ProxyHideShow(mTlsDecryption.isChecked(), false);
             }
 
+            if (VpnReconnectService.isAvailable())
+                mRestartOnDisconnect.setVisible(!enabled);
+
             mIpMode.setVisible(!enabled);
             mCapInterface.setVisible(enabled);
             mVpnExceptions.setVisible(!enabled);
@@ -418,15 +589,19 @@ public class SettingsActivity extends BaseActivity implements PreferenceFragment
 
         private boolean checkDecrpytionWithRoot(boolean rootEnabled, boolean tlsDecryption) {
             if(mRootDecryptionNoticeShown || !rootEnabled || !tlsDecryption)
-                return false;
+                return true;
 
             new AlertDialog.Builder(requireContext())
                     .setMessage(R.string.tls_decryption_with_root_msg)
-                    .setNeutralButton(R.string.ok, (dialog, whichButton) -> {})
+                    .setPositiveButton(R.string.ok, (dialog, whichButton) -> {
+                        mRootCaptureEnabled.setChecked(true);
+                        mTlsDecryption.setChecked(true);
+
+                        mRootDecryptionNoticeShown = true;
+                    })
                     .show();
 
-            mRootDecryptionNoticeShown = true;
-            return true;
+            return false;
         }
     }
 }

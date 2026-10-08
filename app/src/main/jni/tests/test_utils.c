@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2022 - Emanuele Faranda
+ * Copyright 2022-26 - Emanuele Faranda
  */
 
 #include "test_utils.h"
@@ -37,8 +37,35 @@ static void free_payload_chunks(pcapdroid_t *pd);
 
 /* ******************************************************* */
 
-static void getPcapdPath(struct pcapdroid *pd, const char *prog_name, char *buf, int bufsize) {
-  snprintf(buf, bufsize, "../main/pcapd/libpcapd.so");
+static void getNativeLibPath(struct pcapdroid *pd, const char *prog_name, char *buf, int bufsize) {
+    if (strcmp(prog_name, "pcapd") == 0)
+        snprintf(buf, bufsize, "../main/pcapd/libpcapd.so");
+    else {
+        fprintf(stderr, "Unknown native library: %s", prog_name);
+
+        if (bufsize > 0)
+            buf[0] = '\0';
+    }
+}
+
+/* ******************************************************* */
+
+/* Test stand-in for the JNI getCountryCode: derives a deterministic, predictable
+ * 2-char "country code" from the last byte of the destination address (e.g.
+ * x.x.x.10 -> "0A"), so that the country match logic can be exercised. */
+static bool getCountryCodeFromIp(struct pcapdroid *pd, const char *host, char out[3]) {
+  zdtun_ip_t ip;
+  int ipver = zdtun_parse_ip(host, &ip);
+
+  if((ipver != 4) && (ipver != 6)) {
+    out[0] = '\0';
+    return false;
+  }
+
+  uint8_t last_byte = (ipver == 4) ? ((const uint8_t*)&ip.ip4)[3] : ip.ip6.s6_addr[15];
+
+  snprintf(out, 3, "%02X", last_byte);
+  return true;
 }
 
 /* ******************************************************* */
@@ -85,11 +112,12 @@ pcapdroid_t* pd_init_test(const char *ifname) {
   pcapdroid_t *pd = calloc(1, sizeof(pcapdroid_t));
   assert(pd != NULL);
 
-  pd->root_capture = true;
-  pd->root.capture_interface = (char*) ifname;
-  pd->root.as_root = false;   // don't run as root
-  pd->app_filter = -1;        // don't filter
-  pd->cb.get_libprog_path = getPcapdPath;
+  pd->vpn_capture = false;
+  pd->pcap_file_capture = true;
+  pd->pcap.capture_interface = (char*) ifname;
+  pd->pcap.as_root = false;   // don't run as root
+  pd->cb.get_libprog_path = getNativeLibPath;
+  pd->cb.get_country_code = getCountryCodeFromIp;
   pd->payload_mode = PAYLOAD_MODE_FULL;
 
   strcpy(pd->cachedir, ".");
@@ -215,19 +243,20 @@ u_char* next_pcap_record(pcap_rec_t *rec) {
 /* ******************************************************* */
 
 /* Dumps all the payload chunks into a linked list. The linked list is accessible via
- * (payload_chunk_t*)data->payload_chunks */
-bool dump_cb_payload_chunk(pcapdroid_t *pd, const pkt_context_t *pctx, int dump_size) {
+ * (payload_chunk_t*)conn->payload_chunks */
+bool dump_cb_payload_chunk(pcapdroid_t *pd, pd_conn_t *conn, bool is_tx, uint64_t ms, uint32_t stream_id, const char *dump_data, int dump_size, int64_t file_offset) {
   payload_chunk_t *chunk = calloc(1, sizeof(payload_chunk_t));
   assert(chunk != NULL);
   chunk->payload = (u_char*)malloc(dump_size);
   assert(chunk->payload != NULL);
 
-  memcpy(chunk->payload, pctx->pkt->l7, dump_size);
+  memcpy(chunk->payload, dump_data, dump_size);
   chunk->size = dump_size;
-  chunk->is_tx = pctx->is_tx;
+  chunk->is_tx = is_tx;
+  chunk->file_offset = file_offset;
 
   // append to the linked list
-  payload_chunk_t *last = (payload_chunk_t*)pctx->data->payload_chunks;
+  payload_chunk_t *last = (payload_chunk_t*) conn->payload_chunks;
   if(last) {
     while(last->next)
       last = last->next;
@@ -237,7 +266,7 @@ bool dump_cb_payload_chunk(pcapdroid_t *pd, const pkt_context_t *pctx, int dump_
     num_chunks_lists++;
     chunks_lists_heads = realloc(chunks_lists_heads, num_chunks_lists * sizeof(void*));
     chunks_lists_heads[num_chunks_lists - 1] = chunk;
-    pctx->data->payload_chunks = chunk;
+    conn->payload_chunks = chunk;
   }
 
   return true;

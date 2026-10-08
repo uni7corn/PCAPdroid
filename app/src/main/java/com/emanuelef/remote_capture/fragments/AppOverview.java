@@ -14,20 +14,18 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-22 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.fragments;
 
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.net.Uri;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -35,12 +33,17 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.ScrollView;
 import android.widget.TableLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
 import androidx.core.view.MenuProvider;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.Lifecycle;
 
@@ -112,7 +115,10 @@ public class AppOverview extends Fragment implements MenuProvider {
 
         ((TextView)view.findViewById(R.id.uid)).setText(Utils.formatInteger(ctx, dsc.getUid()));
         ((TextView)view.findViewById(R.id.name)).setText(dsc.getName());
-        ((ImageView)view.findViewById(R.id.app_icon)).setImageDrawable(dsc.getIcon());
+        Drawable icon = dsc.getIcon();
+        if (icon == null)
+            icon = ContextCompat.getDrawable(ctx, R.drawable.ic_image);
+        ((ImageView)view.findViewById(R.id.app_icon)).setImageDrawable(icon);
 
         mPinfo = dsc.getPackageInfo();
 
@@ -163,7 +169,15 @@ public class AppOverview extends Fragment implements MenuProvider {
 
         mTable = view.findViewById(R.id.table);
 
+        ScrollView sv = view.findViewById(R.id.app_overview);
+        ViewCompat.setOnApplyWindowInsetsListener(sv, (v, windowInsets) -> {
+            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                    WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(insets.left, 0, insets.right, insets.bottom);
 
+            return windowInsets;
+        });
+        sv.setClipToPadding(false);
     }
 
     @Override
@@ -208,9 +222,7 @@ public class AppOverview extends Fragment implements MenuProvider {
         int id = item.getItemId();
 
         if(id == R.id.app_info) {
-            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            intent.setData(Uri.fromParts("package", mPinfo.packageName, null));
-            Utils.startActivity(requireContext(), intent);
+            Utils.openAppSettings(requireContext(), mPinfo.packageName);
             return true;
         } else if(id == R.id.copy_to_clipboard) {
             Utils.copyToClipboard(requireContext(), asString());

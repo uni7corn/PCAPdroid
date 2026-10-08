@@ -1,3 +1,22 @@
+/*
+ * This file is part of PCAPdroid.
+ *
+ * PCAPdroid is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * PCAPdroid is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Copyright 2021-26 - Emanuele Faranda
+ */
+
 package com.emanuelef.remote_capture.model;
 
 import android.content.Context;
@@ -5,13 +24,16 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 
-import com.emanuelef.remote_capture.Billing;
-
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 
 public class CaptureSettings implements Serializable {
     public Prefs.DumpMode dump_mode;
-    public String app_filter;
+    public HashSet<String> app_filter;
+    public String decryption_rules_json = "";
     public String collector_address;
     public int collector_port;
     public int http_server_port;
@@ -22,15 +44,18 @@ public class CaptureSettings implements Serializable {
     public String socks5_username;
     public String socks5_password;
     public Prefs.IpMode ip_mode;
+    public String input_pcap_path;
     public boolean root_capture;
-    public boolean pcapdroid_trailer;
+    public boolean dump_extensions;
     public boolean full_payload;
-    public boolean block_quic;
+    public Prefs.BlockQuicMode block_quic_mode;
     public boolean auto_block_private_dns;
     public boolean pcapng_format;
     public String capture_interface;
     public String pcap_uri = "";
     public String pcap_name = "";
+    public String sslkeylog_name = "";
+    public boolean api_capture;
     public int snaplen = 0;
     public int max_pkts_per_flow = 0;
     public int max_dump_size = 0;
@@ -38,41 +63,43 @@ public class CaptureSettings implements Serializable {
 
     public CaptureSettings(Context ctx, SharedPreferences prefs) {
         dump_mode = Prefs.getDumpMode(prefs);
-        app_filter = Prefs.getAppFilter(prefs);
-        collector_address = Prefs.getCollectorIp(prefs);
+        app_filter = new HashSet<>(Prefs.getAppFilter(prefs));
+        collector_address = Prefs.getCollectorHost(prefs);
         collector_port = Prefs.getCollectorPort(prefs);
         http_server_port = Prefs.getHttpServerPort(prefs);
         socks5_enabled = Prefs.getSocks5Enabled(prefs);
-        socks5_proxy_address = Prefs.getSocks5ProxyAddress(prefs);
+        socks5_proxy_address = Prefs.getSocks5ProxyHost(prefs);
         socks5_proxy_port = Prefs.getSocks5ProxyPort(prefs);
         socks5_username = Prefs.isSocks5AuthEnabled(prefs) ? Prefs.getSocks5Username(prefs) : "";
         socks5_password = Prefs.isSocks5AuthEnabled(prefs) ? Prefs.getSocks5Password(prefs) : "";
         ip_mode = Prefs.getIPMode(prefs);
         root_capture = Prefs.isRootCaptureEnabled(prefs);
-        pcapdroid_trailer = Prefs.isPcapdroidTrailerEnabled(prefs);
         capture_interface = Prefs.getCaptureInterface(prefs);
         tls_decryption = Prefs.getTlsDecryptionEnabled(prefs);
         full_payload = Prefs.getFullPayloadMode(prefs);
-        block_quic = Prefs.blockQuic(prefs);
+        block_quic_mode = Prefs.getBlockQuicMode(prefs);
         auto_block_private_dns = Prefs.isPrivateDnsBlockingEnabled(prefs);
         mitmproxy_opts = Prefs.getMitmproxyOpts(prefs);
         pcapng_format = Prefs.isPcapngEnabled(ctx, prefs);
+        dump_extensions = pcapng_format || Prefs.isPcapdroidMetadataEnabled(prefs);
+        api_capture = false;
     }
 
     public CaptureSettings(Context ctx, Intent intent) {
         dump_mode = Prefs.getDumpMode(getString(intent, "pcap_dump_mode", "none"));
-        app_filter = getString(intent, Prefs.PREF_APP_FILTER, "");
-        collector_address = getString(intent, Prefs.PREF_COLLECTOR_IP_KEY, "127.0.0.1");
+        app_filter = new HashSet<>(getStringList(intent, Prefs.PREF_APP_FILTER));
+        collector_address = getString(intent, Prefs.PREF_COLLECTOR_HOST_KEY,
+                getString(intent, Prefs.PREF_COLLECTOR_IP_KEY, "127.0.0.1"));
         collector_port = getInt(intent, Prefs.PREF_COLLECTOR_PORT_KEY, 1234);
         http_server_port = getInt(intent, Prefs.PREF_HTTP_SERVER_PORT, 8080);
         socks5_enabled = getBool(intent, Prefs.PREF_SOCKS5_ENABLED_KEY, false);
-        socks5_proxy_address = getString(intent, Prefs.PREF_SOCKS5_PROXY_IP_KEY, "0.0.0.0");
+        socks5_proxy_address = getString(intent, Prefs.PREF_SOCKS5_PROXY_HOST_KEY,
+                getString(intent, Prefs.PREF_SOCKS5_PROXY_IP_KEY, "0.0.0.0"));
         socks5_proxy_port = getInt(intent, Prefs.PREF_SOCKS5_PROXY_PORT_KEY, 8080);
         socks5_username = getString(intent, Prefs.PREF_SOCKS5_USERNAME_KEY, "");
         socks5_password = getString(intent, Prefs.PREF_SOCKS5_PASSWORD_KEY, "");
         ip_mode = Prefs.getIPMode(getString(intent, Prefs.PREF_IP_MODE, Prefs.IP_MODE_DEFAULT));
         root_capture = getBool(intent, Prefs.PREF_ROOT_CAPTURE, false);
-        pcapdroid_trailer = getBool(intent, Prefs.PREF_PCAPDROID_TRAILER, false);
         capture_interface = getString(intent, Prefs.PREF_CAPTURE_INTERFACE, "@inet");
         pcap_uri = getString(intent, "pcap_uri", "");
         pcap_name = getString(intent, "pcap_name", "");
@@ -80,11 +107,24 @@ public class CaptureSettings implements Serializable {
         max_pkts_per_flow = getInt(intent, Prefs.PREF_MAX_PKTS_PER_FLOW, 0);
         max_dump_size = getInt(intent, Prefs.PREF_MAX_DUMP_SIZE, 0);
         tls_decryption = getBool(intent, Prefs.PREF_TLS_DECRYPTION_KEY, false);
-        full_payload = false;
-        block_quic = getBool(intent, Prefs.PREF_BLOCK_QUIC, false);
+        full_payload = getBool(intent, Prefs.PREF_FULL_PAYLOAD, false);;
+        block_quic_mode = Prefs.getBlockQuicMode(getString(intent, "block_quic", Prefs.BLOCK_QUIC_MODE_DEFAULT));
         auto_block_private_dns = getBool(intent, Prefs.PREF_AUTO_BLOCK_PRIVATE_DNS, true);
         mitmproxy_opts = getString(intent, Prefs.PREF_MITMPROXY_OPTS, "");
-        pcapng_format = getBool(intent, Prefs.PREF_PCAPNG_ENABLED, false) && Billing.newInstance(ctx).isPurchased(Billing.PCAPNG_SKU);
+        pcapng_format = getBool(intent, Prefs.PREF_PCAPNG_ENABLED, false);
+        dump_extensions = getBool(intent, Prefs.PREF_DUMP_EXTENSIONS, false)
+                || getBool(intent, "pcapdroid_trailer", false) /* deprecated */;
+        sslkeylog_name = getString(intent, "sslkeylog_name", "");
+        decryption_rules_json = getDecryptionRulesFromIntent(intent);
+        api_capture = true;
+    }
+
+    private String getDecryptionRulesFromIntent(Intent intent){
+        String rules = getString(intent, "decryption_rules", "");
+        if(rules.isBlank())
+            return "";
+
+        return "{\"rules\":" + rules + "}";
     }
 
     private static String getString(Intent intent, String key, String def_value) {
@@ -110,5 +150,28 @@ public class CaptureSettings implements Serializable {
         if(s != null)
             return Boolean.parseBoolean(s);
         return bundle.getBoolean(key, def_value);
+    }
+
+    // get a list of comma-separated strings from the bundle
+    private static List<String> getStringList(Intent intent, String key) {
+        List<String> rv;
+
+        String s = intent.getStringExtra(key);
+        if(s != null) {
+            if (s.indexOf(',') < 0) {
+                rv = new ArrayList<>();
+                rv.add(s);
+            } else {
+                String[] arr = s.split(",");
+                rv = Arrays.asList(arr);
+            }
+        } else
+            rv = new ArrayList<>();
+
+        return rv;
+    }
+
+    public boolean readFromPcap() {
+        return input_pcap_path != null;
     }
 }

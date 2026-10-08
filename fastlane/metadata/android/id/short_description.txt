@@ -1,1 +1,1 @@
-Monitor jaringan tanpa root dan alat dump trafik untuk Android
+Monitor jaringan, firewall, dan dump PCAP tanpa root untuk Android

@@ -14,12 +14,13 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-22 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.fragments.prefs;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.ActionMode;
@@ -47,6 +48,7 @@ import androidx.preference.PreferenceManager;
 import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.R;
 import com.emanuelef.remote_capture.Utils;
+import com.emanuelef.remote_capture.activities.prefs.PortMapExemptionsActivity;
 import com.emanuelef.remote_capture.adapters.PortMappingAdapter;
 import com.emanuelef.remote_capture.model.PortMapping;
 import com.emanuelef.remote_capture.model.PortMapping.PortMap;
@@ -75,6 +77,7 @@ public class PortMapFragment extends Fragment implements MenuProvider {
 
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        view.setFitsSystemWindows(true);
         mListView = view.findViewById(R.id.listview);
         mEmptyText = view.findViewById(R.id.list_empty);
         mPortMap = new PortMapping(requireContext());
@@ -134,6 +137,7 @@ public class PortMapFragment extends Fragment implements MenuProvider {
                 mSelected = new ArrayList<>();
             }
         });
+        Utils.fixListviewInsetsBottom(mListView);
 
         recheckListSize();
     }
@@ -161,8 +165,15 @@ public class PortMapFragment extends Fragment implements MenuProvider {
 
     @Override
     public boolean onMenuItemSelected(@NonNull MenuItem menuItem) {
-        if(menuItem.getItemId() == R.id.add_mapping) {
+        int id = menuItem.getItemId();
+
+        if(id == R.id.add_mapping) {
             openAddDialog();
+            return true;
+        }
+
+        if(id == R.id.exemptions) {
+            startActivity(new Intent(requireContext(), PortMapExemptionsActivity.class));
             return true;
         }
 
@@ -181,7 +192,7 @@ public class PortMapFragment extends Fragment implements MenuProvider {
         protoField.setText(protocols[0]);
         protoField.setAdapter(adapter);
 
-        ((TextInputEditText) view.findViewById(R.id.redirect_ip)).setText("127.0.0.1");
+        ((TextInputEditText) view.findViewById(R.id.redirect_host)).setText("127.0.0.1");
 
         AlertDialog dialog = new AlertDialog.Builder(ctx)
                 .setView(view)
@@ -205,6 +216,9 @@ public class PortMapFragment extends Fragment implements MenuProvider {
                     mPortMap.save();
                     mAdapter.add(mapping);
                     recheckListSize();
+
+                    if(!Prefs.isPortMappingEnabled(PreferenceManager.getDefaultSharedPreferences(requireContext())))
+                        Utils.showToastLong(requireContext(), R.string.port_mapping_disabled_reminder);
                 }
 
                 dialog.dismiss();
@@ -213,11 +227,11 @@ public class PortMapFragment extends Fragment implements MenuProvider {
 
     private PortMap validateAddDialog(View view) {
         TextInputEditText origPortField = (TextInputEditText) view.findViewById(R.id.orig_port);
-        TextInputEditText redirectIpField = (TextInputEditText) view.findViewById(R.id.redirect_ip);
+        TextInputEditText redirectHostField = (TextInputEditText) view.findViewById(R.id.redirect_host);
         TextInputEditText redirectPortField = (TextInputEditText) view.findViewById(R.id.redirect_port);
 
         String origPort = Objects.requireNonNull(origPortField.getText()).toString();
-        String redirectIp = Objects.requireNonNull(redirectIpField.getText()).toString();
+        String redirectHost = Objects.requireNonNull(redirectHostField.getText()).toString();
         String redirectPort = Objects.requireNonNull(redirectPortField.getText()).toString();
         String proto = ((AutoCompleteTextView) view.findViewById(R.id.proto)).getText().toString();
 
@@ -230,12 +244,12 @@ public class PortMapFragment extends Fragment implements MenuProvider {
             return null;
         }
 
-        if(redirectIp.isEmpty()) {
-            redirectIpField.setError(getString(R.string.required));
+        if(redirectHost.isEmpty()) {
+            redirectHostField.setError(getString(R.string.required));
             return null;
         }
-        if(!Utils.validateIpAddress(redirectIp)) {
-            redirectIpField.setError(getString(R.string.invalid));
+        if(!Utils.validateIpAddress(redirectHost) && !Utils.validateHost(redirectHost)) {
+            redirectHostField.setError(getString(R.string.invalid));
             return null;
         }
 
@@ -250,7 +264,7 @@ public class PortMapFragment extends Fragment implements MenuProvider {
 
         return new PortMap(
                 proto.equals("TCP") ? 6 : 17, Integer.parseInt(origPort),
-                Integer.parseInt(redirectPort), redirectIp);
+                Integer.parseInt(redirectPort), redirectHost);
     }
 
     private void confirmDelete(ActionMode mode) {

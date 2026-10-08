@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
 
 /* A class to query geolocation info from IP addresses. */
 public class Geolocation {
@@ -64,6 +65,15 @@ public class Geolocation {
         } catch (IOException e) {
             Log.i(TAG, "Geolocation is not available");
         }
+    }
+
+    public boolean isAvailable() {
+        return (mCountryReader != null) && (mAsnReader != null);
+    }
+
+    public static boolean isAvailable(Context ctx) {
+        Date builtDate = Geolocation.getDbDate(ctx);
+        return (builtDate != null);
     }
 
     private static File getCountryFile(Context ctx) {
@@ -100,7 +110,7 @@ public class Geolocation {
 
     @SuppressLint("SimpleDateFormat")
     public static boolean downloadDb(Context ctx) {
-        String dateid = new SimpleDateFormat("yyyy-MM").format(new Date());
+        String dateid = new SimpleDateFormat("yyyy-MM", Locale.US).format(new Date());
         String country_url = "https://download.db-ip.com/free/dbip-country-lite-" + dateid + ".mmdb.gz";
         String asn_url = "https://download.db-ip.com/free/dbip-asn-lite-" + dateid + ".mmdb.gz";
 

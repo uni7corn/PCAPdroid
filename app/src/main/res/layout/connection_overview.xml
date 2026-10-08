@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/connection_overview"
     xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/connection_overview"
     android:layout_width="fill_parent"
     android:layout_height="fill_parent"
     android:fillViewport="true"
-    android:padding="8dp"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
+    android:padding="8dp">
 
 <androidx.constraintlayout.widget.ConstraintLayout
     android:layout_width="match_parent"
@@ -27,6 +27,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/app" />
             <TextView
@@ -34,6 +35,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="com.emanuelef.remote_capture (14503)" />
         </TableRow>
@@ -46,15 +48,33 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/protocol" />
-            <TextView
-                android:id="@+id/detail_protocol"
+
+            <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="0.75"
-                android:textIsSelectable="true"
-                tools:text="TLS (TCP)" />
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/detail_protocol"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textIsSelectable="true"
+                    tools:text="TLS (TCP)" />
+
+                <ImageView
+                    android:id="@+id/protocol_info"
+                    android:layout_gravity="center"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:visibility="gone"
+                    tools:visibility="visible"
+                    android:paddingTop="1sp"
+                    android:src="@drawable/ic_info" />
+            </LinearLayout>
         </TableRow>
 
         <TableRow
@@ -67,6 +87,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/sni" />
             <LinearLayout
@@ -98,6 +119,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 android:textStyle="bold"
                 android:text="@string/source" />
@@ -106,6 +128,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="1.2.3.4:14631" />
         </TableRow>
@@ -118,6 +141,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/destination" />
             <LinearLayout
@@ -166,6 +190,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/status" />
             <TextView
@@ -173,8 +198,47 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="Open" />
+        </TableRow>
+
+        <TableRow
+            android:id="@+id/error_row"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginBottom="4dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.25"
+                android:textAlignment="viewStart"
+                android:textStyle="bold"
+                android:text="@string/error" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="0.75"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/detail_errno"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textIsSelectable="true"
+                    android:textColor="@color/warning"
+                    tools:text="No route to host (error 113)" />
+
+                <ImageView
+                    android:id="@+id/error_info"
+                    android:layout_gravity="center"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:paddingTop="1sp"
+                    android:src="@drawable/ic_info" />
+            </LinearLayout>
         </TableRow>
 
         <TableRow
@@ -188,6 +252,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/network_interface" />
             <TextView
@@ -195,6 +260,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="wlan0" />
         </TableRow>
@@ -208,6 +274,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/url" />
             <TextView
@@ -215,6 +282,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="example.com/test" />
         </TableRow>
@@ -228,6 +296,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/country" />
             <LinearLayout
@@ -261,6 +330,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/asn" />
             <TextView
@@ -268,6 +338,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="ASN_1 - Public" />
         </TableRow>
@@ -280,6 +351,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/decryption" />
             <LinearLayout
@@ -303,9 +375,31 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="0.75"
+                    android:textAlignment="viewStart"
                     android:textIsSelectable="true"
                     tools:text="Decrypted" />
             </LinearLayout>
+        </TableRow>
+        <TableRow
+            android:id="@+id/injected_scripts_row"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginBottom="4dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.25"
+                android:textAlignment="viewStart"
+                android:textStyle="bold"
+                android:text="@string/injected" />
+            <TextView
+                android:id="@+id/injected_scripts"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.75"
+                android:textAlignment="viewStart"
+                android:textIsSelectable="true"
+                tools:text="some script" />
         </TableRow>
 
         <TableRow
@@ -317,6 +411,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/network_traffic" />
             <TextView
@@ -324,6 +419,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="1.5 MB received - 0.1 sent" />
         </TableRow>
@@ -338,6 +434,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="TCP Flags" />
             <TextView
@@ -345,6 +442,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="1.1 K down - 98 down" />
         </TableRow>
@@ -357,6 +455,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/packets" />
             <TextView
@@ -364,6 +463,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="1.1 K received - 98 sent" />
         </TableRow>
@@ -379,6 +479,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/blocked_pkts" />
             <TextView
@@ -386,6 +487,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="11 pkts" />
         </TableRow>
@@ -398,6 +500,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/payload" />
             <TextView
@@ -405,6 +508,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="0.6 MB" />
         </TableRow>
@@ -417,6 +521,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/duration" />
             <TextView
@@ -424,6 +529,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="2 min" />
         </TableRow>
@@ -436,6 +542,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/first_seen" />
             <TextView
@@ -443,6 +550,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="01/02/20 00:45:01" />
         </TableRow>
@@ -455,6 +563,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.25"
+                android:textAlignment="viewStart"
                 android:textStyle="bold"
                 android:text="@string/last_seen" />
             <TextView
@@ -462,6 +571,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="0.75"
+                android:textAlignment="viewStart"
                 android:textIsSelectable="true"
                 tools:text="01/02/20 00:47:01" />
         </TableRow>
@@ -477,6 +587,7 @@
         android:textIsSelectable="true"
         android:layout_marginTop="8dp"
         android:visibility="gone"
+        tools:visibility="visible"
         tools:text="The client may not trust certificate" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

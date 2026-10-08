@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Copyright 2020-21 - Emanuele Faranda
+ * Copyright 2020-26 - Emanuele Faranda
  */
 
 package com.emanuelef.remote_capture.fragments;
@@ -38,14 +38,20 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResult;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.view.ActionMode;
 import androidx.appcompat.widget.SearchView;
+import androidx.core.graphics.Insets;
 import androidx.core.view.MenuProvider;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.Lifecycle;
 import androidx.preference.PreferenceManager;
@@ -55,6 +61,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.emanuelef.remote_capture.AppsResolver;
 import com.emanuelef.remote_capture.Billing;
 import com.emanuelef.remote_capture.CaptureService;
+import com.emanuelef.remote_capture.Cidr;
 import com.emanuelef.remote_capture.ConnectionsRegister;
 import com.emanuelef.remote_capture.Log;
 import com.emanuelef.remote_capture.PCAPdroid;
@@ -75,23 +82,33 @@ import com.emanuelef.remote_capture.interfaces.ConnectionsListener;
 import com.emanuelef.remote_capture.activities.EditFilterActivity;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.slider.LabelFormatter;
+import com.google.android.material.slider.Slider;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ConnectionsFragment extends Fragment implements ConnectionsListener, MenuProvider, SearchView.OnQueryTextListener {
     private static final String TAG = "ConnectionsFragment";
+    private static boolean maliciousWarningShown = false;
     public static final String FILTER_EXTRA = "filter";
     public static final String QUERY_EXTRA = "query";
     private Handler mHandler;
     private ConnectionsAdapter mAdapter;
     private FloatingActionButton mFabDown;
+    private int mFabDownMargin = 0;
     private EmptyRecyclerView mRecyclerView;
     private TextView mEmptyText;
     private TextView mOldConnectionsText;
     private boolean autoScroll;
-    private boolean listenerSet;
+    private ConnectionsRegister mConnsRegister;
     private ChipGroup mActiveFilter;
+    private Slider mSizeSlider;
+    private boolean mSizeSliderActive = false;
     private MenuItem mMenuFilter;
     private MenuItem mMenuItemSearch;
     private MenuItem mSave;
@@ -99,6 +116,11 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
     private AppsResolver mApps;
     private SearchView mSearchView;
     private String mQueryToApply;
+    private String mUnblockCidr;
+    private String mDecRemoveCidr;
+    private ActionMode mActionMode;
+    private AlertDialog mAlertDialog;
+    private OnBackPressedCallback mBackCallback;
 
     private final ActivityResultLauncher<Intent> csvFileLauncher =
             registerForActivityResult(new StartActivityForResult(), this::csvFileResult);
@@ -111,21 +133,50 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
         refreshEmptyText();
 
-        registerConnsListener();
-        mRecyclerView.setEmptyView(mEmptyText); // after registerConnsListener, when the adapter is populated
+        updateConnsListener();
+        mRecyclerView.setEmptyView(mEmptyText); // after updateConnsListener, when the adapter is populated
 
         refreshMenuIcons();
+
+        if (mAdapter != null) {
+            boolean visible = mAdapter.mFilter.minSize >= 1024;
+            mSizeSlider.setVisibility(visible ? View.VISIBLE : View.GONE);
+            mSizeSlider.setLabelBehavior(visible ? LabelFormatter.LABEL_VISIBLE : LabelFormatter.LABEL_GONE);
+        }
     }
 
     @Override
     public void onPause() {
         super.onPause();
 
-        unregisterConnsListener();
+        updateConnsListener();
         mRecyclerView.setEmptyView(null);
 
         if(mSearchView != null)
             mQueryToApply = mSearchView.getQuery().toString();
+    }
+
+    @Override
+    public void onDestroyView() {
+        if(mAlertDialog != null)
+            mAlertDialog.dismiss();
+
+        super.onDestroyView();
+    }
+
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+
+        if (hidden) {
+            if(mActionMode != null)
+                mActionMode.finish();
+            clearFilters();
+        } else {
+            if (mRecyclerView != null) {
+                mRecyclerView.scrollToPosition(0);
+            }
+        }
     }
 
     @Override
@@ -141,7 +192,9 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
     @Override
     public View onCreateView(LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
-        requireActivity().addMenuProvider(this, getViewLifecycleOwner(), Lifecycle.State.RESUMED);
+        if (!(getParentFragment() instanceof DataViewContainerFragment)) {
+            requireActivity().addMenuProvider(this, getViewLifecycleOwner(), Lifecycle.State.RESUMED);
+        }
         return inflater.inflate(R.layout.connections, container, false);
     }
 
@@ -152,25 +205,23 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
             mEmptyText.setText(R.string.capture_not_running_status);
     }
 
-    private void registerConnsListener() {
-        if (!listenerSet) {
-            ConnectionsRegister reg = CaptureService.getConnsRegister();
+    // Only listen while resumed: a fragment which is never resumed (e.g. an offscreen ViewPager2
+    // page) never gets onPause, so a listener registered in another state would be leaked
+    private void updateConnsListener() {
+        ConnectionsRegister reg = isResumed() ? CaptureService.getConnsRegister() : null;
+        if (reg == mConnsRegister)
+            return;
 
-            if (reg != null) {
-                reg.addListener(this);
-                listenerSet = true;
-            }
+        if (mConnsRegister != null) {
+            mConnsRegister.removeListener(this);
+
+            // must be done after removeListener, which waits for any in-progress notification
+            mHandler.removeCallbacksAndMessages(null);
         }
-    }
 
-    private void unregisterConnsListener() {
-        if(listenerSet) {
-            ConnectionsRegister reg = CaptureService.getConnsRegister();
-            if (reg != null)
-                reg.removeListener(this);
-
-            listenerSet = false;
-        }
+        mConnsRegister = reg;
+        if (reg != null)
+            reg.addListener(this);
     }
 
     @Override
@@ -184,6 +235,34 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         mApps = new AppsResolver(requireContext());
 
         mEmptyText = view.findViewById(R.id.no_connections);
+        mSizeSlider = view.findViewById(R.id.size_slider);
+        mSizeSlider.setLabelFormatter(value -> Utils.formatBytes(((long) value) * 1024));
+        mSizeSlider.addOnChangeListener((slider, value, fromUser) -> {
+            if (mAdapter != null) {
+                mAdapter.mFilter.minSize = ((long) value) * 1024;
+                refreshFilteredConnections();
+            }
+        });
+        mSizeSlider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+            @Override
+            public void onStartTrackingTouch(@NonNull Slider slider) {
+                mSizeSliderActive = true;
+            }
+
+            @Override
+            public void onStopTrackingTouch(@NonNull Slider slider) {
+                if (slider.getValue() == 0) {
+                    // NOTE: setting LABEL_GONE is also necessary to
+                    // prevent the label from being still visible in some cases
+                    slider.setVisibility(View.GONE);
+                    slider.setLabelBehavior(LabelFormatter.LABEL_GONE);
+                }
+
+                mSizeSliderActive = false;
+                recheckMaxConnectionSize();
+            }
+        });
+
         mActiveFilter = view.findViewById(R.id.active_filter);
         mActiveFilter.setOnCheckedStateChangeListener((group, checkedIds) -> {
             if(mAdapter != null) {
@@ -195,7 +274,6 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
         mAdapter = new ConnectionsAdapter(requireContext(), mApps);
         mRecyclerView.setAdapter(mAdapter);
-        listenerSet = false;
         registerForContextMenu(mRecyclerView);
 
         DividerItemDecoration dividerItemDecoration = new DividerItemDecoration(mRecyclerView.getContext(),
@@ -204,24 +282,69 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
         mAdapter.setClickListener(v -> {
             int pos = mRecyclerView.getChildLayoutPosition(v);
+
+            if(mActionMode != null) {
+                toggleSelection(pos);
+                return;
+            }
+
             ConnectionDescriptor item = mAdapter.getItem(pos);
 
             if(item != null) {
                 Intent intent = new Intent(requireContext(), ConnectionDetailsActivity.class);
                 intent.putExtra(ConnectionDetailsActivity.CONN_ID_KEY, item.incr_id);
+
+                if(mAdapter.hasFilter()) {
+                    ArrayList<Integer> filteredIds = mAdapter.getFilteredConnectionIds();
+                    if(filteredIds != null)
+                        intent.putIntegerArrayListExtra(ConnectionDetailsActivity.FILTERED_IDS_KEY, filteredIds);
+                }
+
                 startActivity(intent);
             }
+        });
+
+        mAdapter.setSelectionLongClickListener(v -> {
+            if(mActionMode != null) {
+                int pos = mRecyclerView.getChildLayoutPosition(v);
+                toggleSelection(pos);
+                return true;
+            }
+            return false;
         });
 
         autoScroll = true;
         showFabDown(false);
 
+        ViewCompat.setOnApplyWindowInsetsListener(view.findViewById(R.id.linearlayout), (v, windowInsets) -> {
+            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                    WindowInsetsCompat.Type.displayCutout());
+
+            v.setPadding(insets.left, insets.top, insets.right, 0);
+
+            // only consume the top inset
+            return windowInsets.inset(insets.left, insets.top, insets.right, 0);
+        });
+
         mFabDown.setOnClickListener(v -> scrollToBottom());
+        ViewCompat.setOnApplyWindowInsetsListener(mFabDown, (v, windowInsets) -> {
+            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                    WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.ime());
+
+            ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) v.getLayoutParams();
+            if (mFabDownMargin == 0)
+                // save base margin from the layout
+                mFabDownMargin = mlp.bottomMargin;
+
+            mlp.bottomMargin = mFabDownMargin + insets.bottom;
+            v.setLayoutParams(mlp);
+
+            return WindowInsetsCompat.CONSUMED;
+        });
 
         mRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-            //public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int state) {
                 recheckScroll();
             }
         });
@@ -237,6 +360,16 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
             if(filter != null) {
                 mAdapter.mFilter = filter;
                 fromIntent = true;
+
+                if (filter.onlyBlacklisted && !maliciousWarningShown) {
+                    new AlertDialog.Builder(requireContext())
+                            .setTitle(R.string.malicious_connections)
+                            .setMessage(R.string.malicious_connections_notice)
+                            .setPositiveButton(R.string.ok, (dialogInterface, i) -> {})
+                            .show();
+
+                    maliciousWarningShown = true;
+                }
             }
 
             search = intent.getStringExtra(QUERY_EXTRA);
@@ -260,13 +393,10 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
             mQueryToApply = search;
 
         // Register for service status
-        CaptureService.observeStatus(this, serviceStatus -> {
+        CaptureService.observeStatus(getViewLifecycleOwner(), serviceStatus -> {
             if(serviceStatus == CaptureService.ServiceStatus.STARTED) {
                 // register the new connection register
-                if(listenerSet) {
-                    unregisterConnsListener();
-                    registerConnsListener();
-                }
+                updateConnsListener();
 
                 autoScroll = true;
                 showFabDown(false);
@@ -277,6 +407,26 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
             refreshMenuIcons();
         });
+
+        mBackCallback = new OnBackPressedCallback(false) {
+            @Override
+            public void handleOnBackPressed() {
+                if (mActionMode != null) {
+                    mActionMode.finish();
+                    return;
+                }
+                mMenuItemSearch.collapseActionView();
+            }
+        };
+        requireActivity().getOnBackPressedDispatcher().addCallback(getViewLifecycleOwner(), mBackCallback);
+    }
+
+    private void updateBackCallback() {
+        if (mBackCallback == null)
+            return;
+
+        boolean searchExpanded = (mSearchView != null) && !mSearchView.isIconified();
+        mBackCallback.setEnabled((mActionMode != null) || searchExpanded);
     }
 
     @Override
@@ -310,8 +460,11 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         MatchList fwWhitelist = PCAPdroid.getInstance().getFirewallWhitelist();
         MatchList decryptionList = PCAPdroid.getInstance().getDecryptionList();
 
+        // App allowlist: only meaningful when the app is known and blocked
+        boolean appBlocked = (app != null) && blocklist.matchesApp(app.getUid());
+        MatchList appAllowlist = (appBlocked) ? blocklist.findAppAllowlist(app.getPackageName()) : null;
+
         if(app != null) {
-            boolean appBlocked = blocklist.matchesApp(app.getUid());
             blockVisible = !appBlocked;
             unblockVisible = appBlocked;
 
@@ -367,6 +520,16 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
             blockVisible |= !hostBlocked;
             unblockVisible |= hostBlocked;
 
+            if(appBlocked) {
+                boolean hostAllowed = (appAllowlist != null) && appAllowlist.matchesExactHost(conn.info);
+                item = menu.findItem(R.id.allow_host);
+                item.setTitle(getString(R.string.allowlist_allow, label));
+                item.setVisible(!hostAllowed);
+                item = menu.findItem(R.id.deny_host);
+                item.setTitle(getString(R.string.allowlist_remove, label));
+                item.setVisible(hostAllowed);
+            }
+
             boolean decryptHost = decryptionList.matchesExactHost(conn.info);
             decryptVisible |= !decryptHost;
             dontDecryptVisible |= decryptHost;
@@ -419,6 +582,16 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
                 item = menu.findItem(R.id.unblock_domain);
                 item.setTitle(label);
                 item.setVisible(domainBlocked);
+
+                if(appBlocked) {
+                    boolean domainAllowed = (appAllowlist != null) && appAllowlist.matchesExactHost(domain);
+                    item = menu.findItem(R.id.allow_domain);
+                    item.setTitle(getString(R.string.allowlist_allow, label));
+                    item.setVisible(!domainAllowed);
+                    item = menu.findItem(R.id.deny_domain);
+                    item.setTitle(getString(R.string.allowlist_remove, label));
+                    item.setVisible(domainAllowed);
+                }
             }
 
             if(conn.isBlacklistedHost()) {
@@ -435,8 +608,21 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         }
 
         if(!conn.country.isEmpty()) {
+            boolean countryBlocked = blocklist.matchesCountry(conn.country);
+            String label = Utils.shorten(String.format(getString(R.string.country_val), Utils.getCountryName(ctx, conn.country)), max_length);
+            blockVisible |= !countryBlocked;
+            unblockVisible |= countryBlocked;
+
+            item = menu.findItem(R.id.block_country);
+            item.setTitle(label);
+            item.setVisible(!countryBlocked);
+
+            item = menu.findItem(R.id.unblock_country);
+            item.setTitle(label);
+            item.setVisible(countryBlocked);
+
             item = menu.findItem(R.id.hide_country);
-            item.setTitle(Utils.shorten(String.format(getString(R.string.country_val), Utils.getCountryName(ctx, conn.country)), max_length));
+            item.setTitle(label);
             item.setVisible(true);
         }
 
@@ -444,12 +630,32 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         menu.findItem(R.id.hide_ip).setTitle(label);
         menu.findItem(R.id.copy_ip).setTitle(label);
         menu.findItem(R.id.search_ip).setTitle(label);
+        String unblockIpLabel = label;
+        String decRemoveIpLabel = label;
+        mUnblockCidr = null;
+        mDecRemoveCidr = null;
 
-        boolean ipBlocked = blocklist.matchesIP(conn.dst_ip);
+        boolean ipBlocked = blocklist.matchesExactIP(conn.dst_ip);
+        if (!ipBlocked) {
+            Cidr blockedCidr = blocklist.matchesCidr(conn.dst_ip);
+            if (blockedCidr != null) {
+                ipBlocked = true;
+                mUnblockCidr = blockedCidr.toString();
+                unblockIpLabel = MatchList.getCidrLabel(ctx, blockedCidr);
+            }
+        }
         blockVisible |= !ipBlocked;
         unblockVisible |= ipBlocked;
 
-        boolean decryptIp = decryptionList.matchesIP(conn.dst_ip);
+        boolean decryptIp = decryptionList.matchesExactIP(conn.dst_ip);
+        if (!decryptIp) {
+            Cidr decryptCidr = decryptionList.matchesCidr(conn.dst_ip);
+            if (decryptCidr != null) {
+                decryptIp = true;
+                mDecRemoveCidr = decryptCidr.toString();
+                decRemoveIpLabel = MatchList.getCidrLabel(ctx, decryptCidr);
+            }
+        }
         decryptVisible |= !decryptIp;
         dontDecryptVisible |= decryptIp;
 
@@ -457,14 +663,21 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
                 .setTitle(label)
                 .setVisible(!ipBlocked);
         menu.findItem(R.id.unblock_ip)
-                .setTitle(label)
+                .setTitle(unblockIpLabel)
                 .setVisible(ipBlocked);
+
+        if(appBlocked) {
+            // Allowlist only tracks exact IPs (no CIDR ranges in the per-app allowlist UI)
+            boolean ipAllowed = (appAllowlist != null) && appAllowlist.matchesExactIP(conn.dst_ip);
+            menu.findItem(R.id.allow_ip).setTitle(getString(R.string.allowlist_allow, label)).setVisible(!ipAllowed);
+            menu.findItem(R.id.deny_ip).setTitle(getString(R.string.allowlist_remove, label)).setVisible(ipAllowed);
+        }
 
         menu.findItem(R.id.dec_add_ip)
                 .setTitle(label)
                 .setVisible(!decryptIp);
         menu.findItem(R.id.dec_rem_ip)
-                .setTitle(label)
+                .setTitle(decRemoveIpLabel)
                 .setVisible(decryptIp);
 
         if(conn.isBlacklistedIp())
@@ -481,6 +694,13 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
         menu.findItem(R.id.block_menu).setVisible((firewallVisible || showPurchaseFirewall) && blockVisible);
         menu.findItem(R.id.unblock_menu).setVisible(firewallVisible && unblockVisible);
+
+        // The per-app allowlist (exceptions to a blocked app) is scoped to the app, unlike the
+        // global Block/Unblock lists
+        MenuItem allowlistMenu = menu.findItem(R.id.app_allowlist_menu);
+        allowlistMenu.setVisible(firewallVisible && appBlocked);
+        if(app != null)
+            allowlistMenu.setTitle(getString(R.string.allow_for_app, Utils.shorten(app.getName(), max_length)));
 
         if(!conn.isBlacklisted())
             menu.findItem(R.id.mw_whitelist_menu).setVisible(false);
@@ -505,13 +725,17 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         boolean blocklist_changed = false;
         boolean firewall_wl_changed = false;
         boolean decryption_list_changed = false;
+        MatchList app_allowlist_changed = null;
 
         if(conn == null)
             return super.onContextItemSelected(item);
 
         int id = item.getItemId();
 
-        if(id == R.id.hide_app) {
+        if(id == R.id.select_connection) {
+            startSelectionMode(conn);
+            return true;
+        } else if(id == R.id.hide_app) {
             mAdapter.mMask.addApp(conn.uid);
             mask_changed = true;
         } else if(id == R.id.hide_host) {
@@ -563,7 +787,7 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
             decryptionList.removeApp(conn.uid);
             decryption_list_changed = true;
         } else if(id == R.id.dec_rem_ip)  {
-            decryptionList.removeIp(conn.dst_ip);
+            decryptionList.removeIp((mDecRemoveCidr != null) ? mDecRemoveCidr : conn.dst_ip);
             decryption_list_changed = true;
         } else if(id == R.id.dec_rem_host)  {
             decryptionList.removeHost(conn.info);
@@ -592,6 +816,12 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
                 blocklist_changed = true;
             } else
                 showFirewallPurchaseDialog();
+        } else if(id == R.id.block_country) {
+            if(firewallPurchased) {
+                blocklist.addCountry(conn.country);
+                blocklist_changed = true;
+            } else
+                showFirewallPurchaseDialog();
         } else if(id == R.id.unblock_app_permanently) {
             blocklist.removeApp(conn.uid);
             blocklist_changed = true;
@@ -602,7 +832,7 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         } else if(id == R.id.unblock_app_8h) {
             blocklist_changed = blocklist.unblockAppForMinutes(conn.uid, 480);
         } else if(id == R.id.unblock_ip) {
-            blocklist.removeIp(conn.dst_ip);
+            blocklist.removeIp((mUnblockCidr != null) ? mUnblockCidr : conn.dst_ip);
             blocklist_changed = true;
         } else if(id == R.id.unblock_host) {
             blocklist.removeHost(conn.info);
@@ -610,12 +840,51 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         } else if(id == R.id.unblock_domain) {
             blocklist.removeHost(Utils.getSecondLevelDomain(conn.info));
             blocklist_changed = true;
+        } else if(id == R.id.unblock_country) {
+            blocklist.removeCountry(conn.country);
+            blocklist_changed = true;
         } else if(id == R.id.add_to_fw_whitelist) {
             fwWhitelist.addApp(conn.uid);
             firewall_wl_changed = true;
         } else if(id == R.id.remove_from_fw_whitelist) {
             fwWhitelist.removeApp(conn.uid);
             firewall_wl_changed = true;
+        } else if(id == R.id.allow_host) {
+            AppDescriptor app = mApps.getAppByUid(conn.uid, 0);
+            if(app != null) {
+                app_allowlist_changed = blocklist.getAppAllowlist(app.getPackageName());
+                app_allowlist_changed.addHost(conn.info);
+            }
+        } else if(id == R.id.allow_ip) {
+            AppDescriptor app = mApps.getAppByUid(conn.uid, 0);
+            if(app != null) {
+                app_allowlist_changed = blocklist.getAppAllowlist(app.getPackageName());
+                app_allowlist_changed.addIp(conn.dst_ip);
+            }
+        } else if(id == R.id.allow_domain) {
+            AppDescriptor app = mApps.getAppByUid(conn.uid, 0);
+            if(app != null) {
+                app_allowlist_changed = blocklist.getAppAllowlist(app.getPackageName());
+                app_allowlist_changed.addHost(Utils.getSecondLevelDomain(conn.info));
+            }
+        } else if(id == R.id.deny_host) {
+            AppDescriptor app = mApps.getAppByUid(conn.uid, 0);
+            if(app != null) {
+                app_allowlist_changed = blocklist.getAppAllowlist(app.getPackageName());
+                app_allowlist_changed.removeHost(conn.info);
+            }
+        } else if(id == R.id.deny_ip) {
+            AppDescriptor app = mApps.getAppByUid(conn.uid, 0);
+            if(app != null) {
+                app_allowlist_changed = blocklist.getAppAllowlist(app.getPackageName());
+                app_allowlist_changed.removeIp(conn.dst_ip);
+            }
+        } else if(id == R.id.deny_domain) {
+            AppDescriptor app = mApps.getAppByUid(conn.uid, 0);
+            if(app != null) {
+                app_allowlist_changed = blocklist.getAppAllowlist(app.getPackageName());
+                app_allowlist_changed.removeHost(Utils.getSecondLevelDomain(conn.info));
+            }
         } else if(id == R.id.open_app_details) {
             Intent intent = new Intent(requireContext(), AppDetailsActivity.class);
             intent.putExtra(AppDetailsActivity.APP_UID_EXTRA, conn.uid);
@@ -647,7 +916,9 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         } else if(decryption_list_changed) {
             decryptionList.save();
             CaptureService.reloadDecryptionList();
-        } else if(blocklist_changed)
+        } else if(app_allowlist_changed != null)
+            blocklist.saveAndReload();
+        else if(blocklist_changed)
             blocklist.saveAndReload();
 
         return true;
@@ -710,6 +981,40 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
         mActiveFilter.removeAllViews();
         mAdapter.mFilter.toChips(getLayoutInflater(), mActiveFilter);
+
+        // minSize slider
+        long minSizeKB = mAdapter.mFilter.minSize / 1024;
+        boolean sliderVisible = false;
+        ConnectionsRegister reg = CaptureService.getConnsRegister();
+
+        if ((reg != null) && (minSizeKB > 0)) {
+            long maxSizeKb = reg.getMaxBytes() / 1024;
+            maxSizeKb = Math.max(maxSizeKb, minSizeKB);
+
+            if (maxSizeKb >= 2) {
+                // NOTE: visible -> hidden transition is performed in onStopTrackingTouch
+                mSizeSlider.setValueTo(maxSizeKb);
+                mSizeSlider.setValue(minSizeKB);
+                sliderVisible = true;
+            }
+        }
+
+        if (sliderVisible && (mSizeSlider.getVisibility() != View.VISIBLE)) {
+            mSizeSlider.setVisibility(View.VISIBLE);
+            mSizeSlider.setLabelBehavior(LabelFormatter.LABEL_VISIBLE);
+        }
+    }
+
+    private void recheckMaxConnectionSize() {
+        if ((mSizeSlider.getVisibility() == View.VISIBLE) && !mSizeSliderActive) {
+            ConnectionsRegister reg = CaptureService.getConnsRegister();
+            if (reg != null) {
+                long maxSizeKB = reg.getMaxBytes() / 1024;
+
+                if (maxSizeKB > mSizeSlider.getValueTo())
+                    mSizeSlider.setValueTo(maxSizeKB);
+            }
+        }
     }
 
     // This performs an unoptimized adapter refresh
@@ -735,7 +1040,7 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         // Important: must use the provided num_connections rather than accessing the register
         // in order to avoid desyncs
 
-        // using runOnUi to populate the adapter as soon as registerConnsListener is called
+        // using runOnUi to populate the adapter as soon as updateConnsListener is called
         Utils.runOnUi(() -> {
             Log.d(TAG, "New connections size: " + num_connections);
 
@@ -758,6 +1063,7 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
             if(autoScroll)
                 scrollToBottom();
             recheckUntrackedConnections();
+            recheckMaxConnectionSize();
         });
     }
 
@@ -771,7 +1077,10 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
     @Override
     public void connectionsUpdated(int[] positions) {
-        mHandler.post(() -> mAdapter.connectionsUpdated(positions));
+        mHandler.post(() -> {
+            mAdapter.connectionsUpdated(positions);
+            recheckMaxConnectionSize();
+        });
     }
 
     @Override
@@ -784,6 +1093,20 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
         mSearchView = (SearchView) mMenuItemSearch.getActionView();
         mSearchView.setOnQueryTextListener(this);
+
+        mMenuItemSearch.setOnActionExpandListener(new MenuItem.OnActionExpandListener() {
+            @Override
+            public boolean onMenuItemActionExpand(@NonNull MenuItem item) {
+                mBackCallback.setEnabled(true);
+                return true;
+            }
+
+            @Override
+            public boolean onMenuItemActionCollapse(@NonNull MenuItem item) {
+                mBackCallback.setEnabled(mActionMode != null);
+                return true;
+            }
+        });
 
         if((mQueryToApply != null) && (!mQueryToApply.isEmpty())) {
             String query = mQueryToApply;
@@ -817,49 +1140,88 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
 
         boolean is_enabled = (CaptureService.getConnsRegister() != null);
 
-        mMenuItemSearch.setVisible(is_enabled); // NOTE: setEnabled does not work for this
-        //mMenuFilter.setEnabled(is_enabled);
+        mMenuItemSearch.setEnabled(is_enabled);
         mSave.setEnabled(is_enabled);
     }
 
     private void dumpCsv() {
-        String dump = mAdapter.dumpConnectionsCsv();
+        if(mCsvFname == null)
+            return;
 
-        if(mCsvFname != null) {
-            Log.d(TAG, "Writing CSV file: " + mCsvFname);
-            boolean error = true;
+        Log.d(TAG, "Writing CSV file: " + mCsvFname);
+        String dump = mAdapter.dumpConnectionsCsv(mActionMode != null);
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Handler handler = new Handler(Looper.getMainLooper());
+        final boolean[] cancelled = {false};
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+        builder.setTitle(R.string.exporting);
+        builder.setMessage(R.string.export_in_progress);
+        builder.setNegativeButton(android.R.string.cancel, (dialog, which) -> {
+            Log.i(TAG, "Abort CSV export");
+            cancelled[0] = true;
+            executor.shutdownNow();
+        });
+
+        mAlertDialog = builder.create();
+        mAlertDialog.setCanceledOnTouchOutside(false);
+        mAlertDialog.show();
+
+        mAlertDialog.setOnCancelListener(dialog -> {
+            Log.i(TAG, "Abort CSV export (back button)");
+            cancelled[0] = true;
+            executor.shutdownNow();
+        });
+        mAlertDialog.setOnDismissListener(dialog -> mAlertDialog = null);
+
+        final Uri csvFname = mCsvFname;
+        mCsvFname = null;
+
+        executor.execute(() -> {
+            boolean success = false;
 
             try {
-                OutputStream stream = requireActivity().getContentResolver().openOutputStream(mCsvFname, "rwt");
+                OutputStream stream = requireActivity().getContentResolver().openOutputStream(csvFname, "rwt");
 
                 if(stream != null) {
-                    stream.write(dump.getBytes());
+                    stream.write(dump.getBytes(StandardCharsets.UTF_8));
                     stream.close();
+                    success = true;
                 }
-
-                Utils.UriStat stat = Utils.getUriStat(requireContext(), mCsvFname);
-
-                if(stat != null) {
-                    String msg = String.format(getString(R.string.file_saved_with_name), stat.name);
-                    Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show();
-                } else
-                    Utils.showToast(requireContext(), R.string.save_ok);
-
-                error = false;
             } catch (IOException e) {
-                e.printStackTrace();
+                if(!cancelled[0])
+                    e.printStackTrace();
             }
 
-            if(error)
-                Utils.showToast(requireContext(), R.string.cannot_write_file);
-        }
+            if(cancelled[0])
+                return;
 
-        mCsvFname = null;
+            final boolean result = success;
+            final Utils.UriStat stat = result ? Utils.getUriStat(requireContext(), csvFname) : null;
+
+            handler.post(() -> {
+                if(mAlertDialog != null)
+                    mAlertDialog.dismiss();
+
+                if(result) {
+                    if(stat != null) {
+                        String msg = String.format(getString(R.string.file_saved_with_name), stat.name);
+                        Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show();
+                    } else
+                        Utils.showToast(requireContext(), R.string.save_ok);
+                } else
+                    Utils.showToast(requireContext(), R.string.cannot_write_file);
+
+                if(mActionMode != null)
+                    mActionMode.finish();
+            });
+        });
     }
 
     public void openFileSelector() {
         boolean noFileDialog = false;
-        String fname = Utils.getUniqueFileName(requireContext(), "csv");
+        String fname = Utils.getExportFileName(requireContext(), "csv");
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
@@ -919,8 +1281,85 @@ public class ConnectionsFragment extends Fragment implements ConnectionsListener
         return true;
     }
 
-    // NOTE: dispatched from activity, returns true if handled
-    public boolean onBackPressed() {
-        return Utils.backHandleSearchview(mSearchView);
+    private void startSelectionMode(ConnectionDescriptor conn) {
+        if(mActionMode != null)
+            return;
+
+        mActionMode = ((AppCompatActivity) requireActivity()).startSupportActionMode(mActionModeCallback);
+
+        // find position of the connection and select it
+        for(int i = 0; i < mAdapter.getItemCount(); i++) {
+            ConnectionDescriptor c = mAdapter.getItem(i);
+            if((c != null) && (c.incr_id == conn.incr_id)) {
+                mAdapter.selectItem(i);
+                break;
+            }
+        }
+
+        updateActionModeTitle();
+        updateBackCallback();
+    }
+
+    private void toggleSelection(int pos) {
+        mAdapter.toggleSelection(pos);
+
+        if(mAdapter.getSelectedCount() == 0) {
+            if(mActionMode != null)
+                mActionMode.finish();
+        } else
+            updateActionModeTitle();
+    }
+
+    private void updateActionModeTitle() {
+        if(mActionMode != null)
+            mActionMode.setTitle(getString(R.string.n_selected, mAdapter.getSelectedCount()));
+    }
+
+    private final ActionMode.Callback mActionModeCallback = new ActionMode.Callback() {
+        @Override
+        public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+            mode.getMenuInflater().inflate(R.menu.connections_cab, menu);
+            return true;
+        }
+
+        @Override
+        public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+            return false;
+        }
+
+        @Override
+        public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+            int id = item.getItemId();
+
+            if(id == R.id.select_all) {
+                if(mAdapter.getSelectedCount() == mAdapter.getItemCount())
+                    mode.finish();
+                else {
+                    mAdapter.selectAll();
+                    updateActionModeTitle();
+                }
+                return true;
+            } else if(id == R.id.save) {
+                openFileSelector();
+                return true;
+            }
+
+            return false;
+        }
+
+        @Override
+        public void onDestroyActionMode(ActionMode mode) {
+            mAdapter.clearSelection();
+            mActionMode = null;
+            updateBackCallback();
+        }
+    };
+
+    public void clearFilters() {
+        if(mAdapter != null) {
+            mAdapter.mFilter = new FilterDescriptor();
+            mAdapter.refreshFilteredConnections();
+            refreshActiveFilter();
+        }
     }
 }
